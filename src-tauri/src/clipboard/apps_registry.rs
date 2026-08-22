@@ -447,6 +447,7 @@ mod macos {
 #[cfg(target_os = "windows")]
 mod windows {
     use super::{validate_existing_path, ScannedAppMeta};
+    use crate::clipboard::app_name::exe_display_name;
     use crate::core::{AppError, Result};
     use crate::db::models::Platform;
     use std::collections::HashSet;
@@ -569,13 +570,5 @@ mod windows {
         }
 
         path
-    }
-
-    fn exe_display_name(path: &Path) -> String {
-        if let Some(name) = path.file_stem().and_then(|s| s.to_str()) {
-            return name.to_owned();
-        }
-
-        path.to_string_lossy().into_owned()
     }
 }

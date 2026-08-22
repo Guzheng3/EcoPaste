@@ -98,8 +98,11 @@ const CUSTOM_GROUPS_SETTING_ID = "organizing.customGroups";
 
 const GROUP_BUTTON_BASE_CLASS =
   "flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-1.5 border-0 bg-transparent p-0 transition-colors";
-const GROUP_ICON_BUTTON_CLASS = GROUP_BUTTON_BASE_CLASS;
-const GROUP_BUTTON_WIDTH = 24;
+const GROUP_ICON_BUTTON_CLASS =
+  "flex h-9 w-12 shrink-0 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-1.5 border-0 bg-transparent px-0.5 py-1 transition-colors";
+const GROUP_BUTTON_LABEL_CLASS = "w-full truncate text-[10px] leading-none";
+const GROUP_ACTION_BUTTON_WIDTH = 24;
+const GROUP_FILTER_BUTTON_WIDTH = 48;
 const GROUP_BUTTON_GAP = 4;
 const GROUP_SEPARATOR_MARGIN = 4;
 
@@ -620,6 +623,7 @@ const Group: FC = () => {
           ) : (
             <ClipboardGroupIcon icon={icon} selected={selected} />
           )}
+          <span className={GROUP_BUTTON_LABEL_CLASS}>{label}</span>
         </button>
       </Tooltip>
     );
@@ -667,6 +671,9 @@ const Group: FC = () => {
                       icon={record.icon}
                       selected={selected}
                     />
+                    <span className={GROUP_BUTTON_LABEL_CLASS}>
+                      {record.name}
+                    </span>
                   </button>
                 </Dropdown>
               );
@@ -790,7 +797,7 @@ function computeCustomGroupCapacity(
     toolbarRect.left +
     GROUP_SEPARATOR_MARGIN +
     GROUP_BUTTON_GAP;
-  const actionSlotWidth = GROUP_BUTTON_GAP + GROUP_BUTTON_WIDTH;
+  const actionSlotWidth = GROUP_BUTTON_GAP + GROUP_ACTION_BUTTON_WIDTH;
   const availableWidth = Math.max(
     0,
     toolbar.clientWidth - customStart - actionSlotWidth,
@@ -800,7 +807,7 @@ function computeCustomGroupCapacity(
     0,
     Math.floor(
       (availableWidth + GROUP_BUTTON_GAP) /
-        (GROUP_BUTTON_WIDTH + GROUP_BUTTON_GAP),
+        (GROUP_FILTER_BUTTON_WIDTH + GROUP_BUTTON_GAP),
     ),
   );
 }

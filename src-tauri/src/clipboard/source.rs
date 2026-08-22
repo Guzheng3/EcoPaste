@@ -85,6 +85,7 @@ mod macos {
 #[cfg(target_os = "windows")]
 mod windows {
     use super::{FrontmostApp, Platform};
+    use crate::clipboard::app_name;
     use crate::clipboard::icon;
 
     use std::path::Path;
@@ -101,11 +102,8 @@ mod windows {
         let exe_path = unsafe { foreground_exe_path() }?;
         // 自身写回事件依赖 WritebackGuard 的 content_hash 判定，这里不过滤自身——
         // 与 macOS 行为一致：哪怕拿到的是 EcoPaste 自己，guard 也会在下游 short-circuit。
-        let name = Path::new(&exe_path)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or(&exe_path)
-            .to_owned();
+        // 显示名优先版本资源 FileDescription（如 chrome.exe → "Google Chrome"）。
+        let name = app_name::exe_display_name(Path::new(&exe_path));
         let icon_png = icon::icon_png(Path::new(&exe_path), None);
 
         Some(FrontmostApp {

@@ -1,3 +1,4 @@
+mod app_name;
 mod app_store;
 mod apps_registry;
 mod cleanup;
