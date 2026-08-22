@@ -5,7 +5,6 @@ interface SettingVisual {
 }
 
 const SETTING_ICON_MAP: Record<string, string> = {
-  "about.checkUpdates": "i-lucide:refresh-cw",
   "about.github": "i-lucide:github",
   "about.sponsor": "i-ph:hand-heart",
   "actions.deleteConfirm": "i-lucide:trash-2",
@@ -68,10 +67,6 @@ const SETTING_ICON_MAP: Record<string, string> = {
   "shortcuts.openPreference": "i-lucide:settings",
   "shortcuts.winV": "i-lucide:clipboard-list",
   "source.excludedApps": "i-lucide:shield-ban",
-  "updates.autoCheck": "i-lucide:refresh-cw",
-  "updates.beta": "i-lucide:flask-conical",
-  "updates.frequency": "i-lucide:calendar-sync",
-  "updates.nightly": "i-lucide:moon",
   "window.idleDestroySeconds": "i-lucide:timer-reset",
   "window.lightweightMode": "i-lucide:leaf",
   "window.position": "i-lucide:move",

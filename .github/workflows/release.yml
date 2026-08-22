@@ -153,15 +153,19 @@ jobs:
           - label: macOS Apple Silicon
             os: macos-latest
             target: aarch64-apple-darwin
+            bundles: app,dmg
           - label: macOS Intel
             os: macos-latest
             target: x86_64-apple-darwin
+            bundles: app,dmg
           - label: Windows x64
             os: windows-latest
             target: x86_64-pc-windows-msvc
+            bundles: nsis,portable
           - label: Windows ARM64
             os: windows-latest
             target: aarch64-pc-windows-msvc
+            bundles: nsis,portable
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -262,10 +266,8 @@ jobs:
           CI: false
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           PLATFORM: ${{ matrix.os }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          args: --target ${{ matrix.target }}
+          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
           prerelease: ${{ needs.release-metadata.outputs.prerelease }}
           releaseBody: ${{ steps.changelog.outputs.body }}
           releaseId: ${{ needs.release-metadata.outputs.release_id }}
