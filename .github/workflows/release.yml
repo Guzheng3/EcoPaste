@@ -161,11 +161,11 @@ jobs:
           - label: Windows x64
             os: windows-latest
             target: x86_64-pc-windows-msvc
-            bundles: nsis,portable
+            bundles: nsis
           - label: Windows ARM64
             os: windows-latest
             target: aarch64-pc-windows-msvc
-            bundles: nsis,portable
+            bundles: nsis
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -273,3 +273,64 @@ jobs:
           releaseId: ${{ needs.release-metadata.outputs.release_id }}
           retryAttempts: 3
           tagName: ${{ needs.release-metadata.outputs.tag_name }}
+
+      - name: Build portable bundle (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        env:
+          TAG_NAME: ${{ needs.release-metadata.outputs.tag_name }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+
+          version="${TAG_NAME#v}"
+          arch="x64"
+          if [[ "${TARGET}" == "aarch64-pc-windows-msvc" ]]; then
+            arch="arm64"
+          fi
+
+          # GitHub Actions windows-latest 自带 7-Zip
+          SEVEN_ZIP="/c/Program Files/7-Zip/7z.exe"
+          if [[ ! -f "${SEVEN_ZIP}" ]]; then
+            SEVEN_ZIP="$(command -v 7z || true)"
+          fi
+          if [[ -z "${SEVEN_ZIP}" || ! -f "${SEVEN_ZIP}" ]]; then
+            echo "::error::7-Zip not found"
+            exit 1
+          fi
+
+          # Tauri NSIS 安装包可被 7-Zip 直接解压，取出绿色免安装文件集
+          bundle_dir="src-tauri/target/${TARGET}/release/bundle/nsis"
+          setup_exe="$(find "${bundle_dir}" -name '*-setup.exe' | head -n 1)"
+          if [[ -z "${setup_exe}" ]]; then
+            echo "::error::NSIS setup.exe not found in ${bundle_dir}"
+            exit 1
+          fi
+
+          portable_dir="portable"
+          rm -rf "${portable_dir}"
+          mkdir -p "${portable_dir}"
+
+          "${SEVEN_ZIP}" x -y "${setup_exe}" -o"${portable_dir}" >/dev/null
+
+          # 主程序改名，作为 portable 可执行文件
+          app_name="EcoPaste"
+          if [[ ! -f "${portable_dir}/${app_name}.exe" ]]; then
+            echo "::error::main exe not found after extraction"
+            find "${portable_dir}" -maxdepth 2 -type f -name '*.exe' || true
+            exit 1
+          fi
+
+          portable_exe="EcoPaste_${version}_${arch}_portable.zip"
+          (cd "${portable_dir}" && "${SEVEN_ZIP}" a -tzip "../${portable_exe}" . >/dev/null)
+
+          ls -lh "${portable_exe}"
+
+      - name: Upload portable bundle
+        if: matrix.os == 'windows-latest'
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+        with:
+          files: EcoPaste_*_portable.zip
+          tag_name: ${{ needs.release-metadata.outputs.tag_name }}
