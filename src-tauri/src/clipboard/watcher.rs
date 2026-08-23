@@ -23,7 +23,6 @@ use super::apps_registry::AppsRegistry;
 use super::guard::WritebackGuard;
 use super::ingest::build_item_with_settings;
 use super::read::ClipboardReader;
-use super::sound;
 use super::source::{self, FrontmostApp};
 use super::storage::ImageStore;
 use crate::db::apps::upsert_app;
@@ -33,6 +32,10 @@ use crate::settings::SettingsStore;
 
 /// 剪贴板更新事件名。前端监听此事件后增量刷新 / 重新拉取列表。
 pub const CLIPBOARD_UPDATED_EVENT: &str = "clipboard://updated";
+
+/// 复制成功反馈事件名。设置开启 `feedback.copy_sound` 时，捕获到新内容后向前端
+/// 广播，前端据此在右下角弹一个轻量小气泡（代替原先的提示音）。
+pub const CLIPBOARD_COPIED_EVENT: &str = "clipboard://copied";
 
 /// macOS 轮询 `changeCount` 的间隔。上游 clipboard-rs 默认 500ms，对复制响应（尤其图片）
 /// 偏慢；我们 fork 出 `new_with_interval` 后调到 120ms，跟手且 CPU 开销可忽略。
@@ -119,6 +122,25 @@ pub fn materialize_source(
     app
 }
 
+/// 复制成功反馈：仅当 `add_deduplicated` 为 false（本次是真正新入库，而非同内容重复复制）
+/// 且设置开启 `feedback.copy_sound` 时 emit 一个小气泡事件。频率与剪贴板事件相当，
+/// 但只在开关开启且非去重时广播；失败仅记日志，不阻断入库主流程。
+fn notify_copy_feedback(app: &AppHandle, deduplicated: bool) {
+    if deduplicated {
+        return;
+    }
+    let enabled = app
+        .try_state::<SettingsStore>()
+        .map(|s| s.snapshot().clipboard.feedback.copy_sound)
+        .unwrap_or(false);
+    if !enabled {
+        return;
+    }
+    if let Err(err) = app.emit(CLIPBOARD_COPIED_EVENT, ()) {
+        log::warn!("emit {CLIPBOARD_COPIED_EVENT} failed: {err}");
+    }
+}
+
 /// 去重入库 + emit「剪贴板更新」事件。监听回调与 `read_clipboard` 命令共用，
 /// 保证两条路径的入库语义与事件契约一致。失败仅记日志（监听场景无人接收 Result）。
 ///
@@ -141,7 +163,7 @@ pub async fn persist_and_notify(
         }
     }
     let result = upsert_item(pool, &item_to_write).await?;
-    sound::maybe_play_copy(app);
+    notify_copy_feedback(app, result.deduplicated);
     if let Err(err) = app.emit(
         CLIPBOARD_UPDATED_EVENT,
         json!({

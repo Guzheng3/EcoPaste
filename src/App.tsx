@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import { RouterProvider } from "react-router";
 import { useSnapshot } from "valtio";
 import { notifyWindowReady } from "@/commands";
+import CopyFeedback from "@/components/CopyFeedback";
 import { WINDOW_LABEL } from "@/constants/windows";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { router } from "./router";
@@ -112,6 +113,7 @@ const App: FC = () => {
     <ConfigProvider locale={locale} modal={ANTD_MODAL_CONFIG} theme={antdTheme}>
       <AntdApp>
         <AppContent />
+        <CopyFeedback />
       </AntdApp>
     </ConfigProvider>
   );

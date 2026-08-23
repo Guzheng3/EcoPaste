@@ -330,9 +330,8 @@
           "title": "Copy as Plain Text by Default"
         },
         "sound": {
-          "description": "Play a sound when new clipboard content is saved to history.",
-          "preview": "Preview sound",
-          "title": "Copy Sound"
+          "description": "Show a small toast in the lower right when new clipboard content is saved to history; re-copying the same content does not repeat the toast.",
+          "title": "Copy Succeeded Toast"
         },
         "updateOnReuse": {
           "description": "Refresh use time and usage count when copying or pasting a history record.",

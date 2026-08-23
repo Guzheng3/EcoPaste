@@ -102,7 +102,6 @@ pub fn run() {
             commands::add_clipboard_app_from_path,
             commands::delete_unreferenced_clipboard_apps,
             commands::get_clipboard_preview_payload,
-            commands::play_copy_sound,
             commands::get_clipboard_image_path,
             commands::get_clipboard_app_icon_path,
             commands::save_clipboard_image_to_file,

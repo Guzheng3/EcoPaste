@@ -36,7 +36,7 @@ const SETTING_ICON_MAP: Record<string, string> = {
   "control.trayIcon": "i-lucide:panel-top",
   "copy.hideWindow": "i-lucide:panel-top-close",
   "copy.plainDefault": "i-lucide:clipboard-copy",
-  "copy.sound": "i-lucide:volume-2",
+  "copy.sound": "i-lucide:badge-check",
   "copy.updateOnReuse": "i-lucide:refresh-cw",
   "diagnostics.resetPreferences": "i-lucide:settings-2",
   "diagnostics.windowLifecycle": "i-lucide:activity",

@@ -1287,16 +1287,6 @@ export const getClipboardPreviewPayload = (itemId: string) => {
 };
 
 /**
- * 播放一次复制成功提示音，供偏好设置页试听。
- */
-export const playCopySound = () => {
-  return call<void>(
-    TAURI_COMMAND.PLAY_COPY_SOUND,
-    "commands:labels.playCopySound",
-  );
-};
-
-/**
  * 在剪贴板窗口当前光标处弹出列表项右键菜单（菜单实例由 Rust 持有）。
  *
  * 点击菜单项后 Rust 会 emit `clipboard://menu-action` 携带 `{action, itemId}`，

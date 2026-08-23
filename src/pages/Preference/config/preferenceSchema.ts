@@ -339,7 +339,7 @@ export const preferenceTabs: PreferenceTab[] = [
           {
             control: { type: "switch" },
             id: "copy.sound",
-            keywords: ["sound", "feedback", "copy"],
+            keywords: ["copy", "feedback", "toast", "notification"],
             path: ["clipboard", "feedback", "copySound"],
             value: (settings) => {
               return settings.clipboard.feedback.copySound;
