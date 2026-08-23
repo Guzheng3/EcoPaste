@@ -23,6 +23,7 @@
         "maximizable": false,
         "minHeight": 300,
         "minWidth": 250,
+        "resizable": true,
         "skipTaskbar": true,
         "title": "EcoPaste",
         "transparent": true,

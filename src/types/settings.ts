@@ -156,8 +156,6 @@ export interface Search {
   clearOnHide: boolean;
 }
 
-export type WindowAspectRatio = "3:5" | "2:3" | "1:1" | "4:5" | "3:4" | "9:16";
-
 export interface Window {
   position: WindowPosition;
   scrollToTopOnOpen: boolean;
@@ -166,8 +164,6 @@ export interface Window {
   selectGroupOnOpen: WindowOpenGroupSelection;
   lightweightMode: boolean;
   idleDestroySeconds: number;
-  scalePercent: number;
-  aspectRatio: WindowAspectRatio;
 }
 
 export interface Preview {

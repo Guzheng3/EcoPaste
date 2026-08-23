@@ -92,26 +92,11 @@ html.vibrancy-acrylic.dark #root {
   box-shadow: 0 10px 38px rgba(0, 0, 0, 0.32);
 }
 
-/* 主列表虚拟滚动：默认 OS 滚动条在右侧会露出一条灰条（用户报"丑滑块"）。
-   把 OS 滚动条宽度收为 0，仅保留鼠标滚轮 / 触摸滚动行为；自定义滚动条由 OverlayScrollbars
-   在 hover/scroll 时显示。 */
-html.vibrancy-acrylic .os-scrollbar-handle {
-  --os-handle-bg: var(--ant-color-text-quaternary);
-  --os-handle-bg-hover: var(--ant-color-text-tertiary);
-  --os-handle-bg-active: var(--ant-color-text-secondary);
-  --os-size: 0;
-  --os-size-hover: 6px;
-  --os-size-active: 8px;
-  --os-track-padding: 0;
-  --os-track-border-radius: 0;
-  --os-handle-border-radius: 999px;
-  --os-handle-min-size: 24px;
-  --os-handle-max-size: 100%;
-  --os-handle-perpendicular-size: 6px;
-  --os-handle-perpendicular-size-hover: 8px;
-  --os-handle-perpendicular-size-active: 10px;
-  --os-transition-duration: 200ms;
-  --os-transition-function: ease;
+/* 主列表虚拟滚动：彻底隐藏滚动条 UI（右侧不再出现任何竖条/滑块），
+   仅保留鼠标滚轮 / 触摸滚动行为。OverlayScrollbars 的 `.os-scrollbar` 是它渲染的
+   自定义轨道+把手，display:none 后滚动功能（os-viewport）不受影响。 */
+html.vibrancy-acrylic .os-scrollbar {
+  display: none;
 }
 
 /* TieZ 风格搜索框：独立一行撑满两侧，加大高度与圆角（复刻 tiez-clipboard

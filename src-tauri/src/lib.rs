@@ -263,6 +263,14 @@ pub fn run() {
                 }
             }
 
+            // 剪贴板窗口拖拽缩放结束（Resized 防抖）后立即落盘最终尺寸，
+            // 保证「调整后不关窗直接退出 / 崩溃」也能持久保留用户自定义尺寸。
+            if let WindowEvent::Resized(_) = event {
+                if window.label() == window::CLIPBOARD_WINDOW_LABEL {
+                    window::schedule_save_clipboard_window_state(window.app_handle());
+                }
+            }
+
             // auto 主题跟随系统明暗切换时，同步重应用材质效果（Acrylic 的色调
             // 依赖明暗参数，不会随原生主题自动更新）。
             if let WindowEvent::ThemeChanged(_) = event {

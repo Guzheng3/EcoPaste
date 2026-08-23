@@ -598,18 +598,6 @@
         }
       },
       "window": {
-        "aspectRatio": {
-          "description": "Width-to-height ratio of the clipboard window; combined with the scale it decides the window shape.",
-          "options": {
-            "1:1": "1:1",
-            "2:3": "2:3",
-            "3:4": "3:4",
-            "3:5": "3:5 (Default)",
-            "4:5": "4:5",
-            "9:16": "9:16"
-          },
-          "title": "Window Aspect Ratio"
-        },
         "idleDestroySeconds": {
           "description": "Release secondary WebViews such as preferences, preview, and context menus after they have been hidden for this long; they rebuild automatically next time.",
           "title": "Secondary Window Idle Release"
@@ -626,10 +614,6 @@
             "remember": "Remember Position"
           },
           "title": "Open Position"
-        },
-        "scalePercent": {
-          "description": "Overall scale of the clipboard window applied to the base size 360x600; takes effect the next time the window opens.",
-          "title": "Window Scale"
         },
         "scrollToTopOnOpen": {
           "description": "Return to the newest items at the top whenever the clipboard window opens.",
