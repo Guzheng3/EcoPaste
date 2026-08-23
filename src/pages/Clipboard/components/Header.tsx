@@ -179,24 +179,26 @@ const Header: FC = () => {
   ];
 
   return (
-    <div
-      className="flex items-center justify-between p-3 pb-2"
-      data-tauri-drag-region
-    >
-      <img alt={t("header.logoAlt")} className="size-5" src="/logo.png" />
+    <div className="flex items-center gap-2 p-3 pb-2" data-tauri-drag-region>
+      <img
+        alt={t("header.logoAlt")}
+        className="size-5 shrink-0"
+        src="/logo.png"
+      />
 
-      <div className="flex items-center gap-1">
+      <div className="flex min-w-0 flex-1 justify-center">
         <SearchInput
           allowClear
           blurToken={searchBlurToken}
-          className="w-40"
+          className="w-full max-w-lg"
           clearToken={searchClearToken}
           focusToken={searchFocusToken}
           onChange={handleKeywordChange}
           placeholder={t("header.searchPlaceholder")}
-          size="small"
         />
+      </div>
 
+      <div className="flex shrink-0 items-center gap-1">
         <Tooltip title={t(pinned ? "header.unpin" : "header.pin")}>
           <CustomIconButton
             icon={
