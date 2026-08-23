@@ -263,7 +263,7 @@ pub fn run() {
                 }
             }
 
-            // auto 主题跟随系统明暗切换时，同步重应用材质效果（Mica/Acrylic/Vibrancy 的色调
+            // auto 主题跟随系统明暗切换时，同步重应用材质效果（Acrylic 的色调
             // 依赖明暗参数，不会随原生主题自动更新）。
             if let WindowEvent::ThemeChanged(_) = event {
                 let label = window.label().to_owned();

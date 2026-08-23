@@ -86,7 +86,8 @@ impl Default for Appearance {
         Self {
             theme: Theme::Auto,
             language: Language::ZhCN,
-            window_effect: WindowEffect::None,
+            // 默认毛玻璃（Acrylic），完全复刻 TieZ 双层观感；云母已废弃。
+            window_effect: WindowEffect::Acrylic,
         }
     }
 }
@@ -100,17 +101,19 @@ pub enum Theme {
     Dark,
 }
 
-/// 窗口材质效果（毛玻璃 / 云母 / 亚克力）。
+/// 窗口材质效果（毛玻璃 / 亚克力）。
 ///
-/// - Windows：`Mica` 仅 Win11（DWM 材质）；`Acrylic` 仅 Win11（Win10 上合成器性能差，不启用）。
-/// - macOS：`Mica` / `Acrylic` 统一映射为 NSVisualEffectView 毛玻璃。
+/// - Windows：`Acrylic` 走 `SetWindowCompositionAttribute`，Win10 1803+ 与 Win11 均可用。
+/// - macOS：`Acrylic` 映射为 NSVisualEffectView 毛玻璃。
 /// - `None`：普通不透明窗口背景。
+///
+/// 旧配置里的 `mica` 作为 `Acrylic` 的别名被容错解析（云母已废弃，统一走毛玻璃）。
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum WindowEffect {
     #[default]
     None,
-    Mica,
+    #[serde(alias = "mica")]
     Acrylic,
 }
 

@@ -33,10 +33,6 @@ use crate::settings::SettingsStore;
 /// 剪贴板更新事件名。前端监听此事件后增量刷新 / 重新拉取列表。
 pub const CLIPBOARD_UPDATED_EVENT: &str = "clipboard://updated";
 
-/// 复制成功反馈事件名。设置开启 `feedback.copy_sound` 时，捕获到新内容后向前端
-/// 广播，前端据此在右下角弹一个轻量小气泡（代替原先的提示音）。
-pub const CLIPBOARD_COPIED_EVENT: &str = "clipboard://copied";
-
 /// macOS 轮询 `changeCount` 的间隔。上游 clipboard-rs 默认 500ms，对复制响应（尤其图片）
 /// 偏慢；我们 fork 出 `new_with_interval` 后调到 120ms，跟手且 CPU 开销可忽略。
 /// Windows 走事件驱动（`WM_CLIPBOARDUPDATE`），此值被忽略。
@@ -123,8 +119,8 @@ pub fn materialize_source(
 }
 
 /// 复制成功反馈：仅当 `add_deduplicated` 为 false（本次是真正新入库，而非同内容重复复制）
-/// 且设置开启 `feedback.copy_sound` 时 emit 一个小气泡事件。频率与剪贴板事件相当，
-/// 但只在开关开启且非去重时广播；失败仅记日志，不阻断入库主流程。
+/// 且设置开启 `feedback.copy_sound` 时，在屏幕右下角弹一个独立置顶小窗提示。频率与剪贴板
+/// 事件相当，但只在开关开启且非去重时广播；失败仅记日志，不阻断入库主流程。
 fn notify_copy_feedback(app: &AppHandle, deduplicated: bool) {
     if deduplicated {
         return;
@@ -136,9 +132,7 @@ fn notify_copy_feedback(app: &AppHandle, deduplicated: bool) {
     if !enabled {
         return;
     }
-    if let Err(err) = app.emit(CLIPBOARD_COPIED_EVENT, ()) {
-        log::warn!("emit {CLIPBOARD_COPIED_EVENT} failed: {err}");
-    }
+    crate::window::copied::show(app);
 }
 
 /// 去重入库 + emit「剪贴板更新」事件。监听回调与 `read_clipboard` 命令共用，

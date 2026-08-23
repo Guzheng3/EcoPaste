@@ -10,7 +10,6 @@ import { useTranslation } from "react-i18next";
 import { RouterProvider } from "react-router";
 import { useSnapshot } from "valtio";
 import { notifyWindowReady } from "@/commands";
-import CopyFeedback from "@/components/CopyFeedback";
 import { WINDOW_LABEL } from "@/constants/windows";
 import { useAppTheme } from "@/hooks/useAppTheme";
 import { router } from "./router";
@@ -63,15 +62,14 @@ const App: FC = () => {
   const antdTheme = useAppTheme(mode);
   const locale = resolveAntdLocale(language);
 
-  // 窗口材质效果（毛玻璃/云母/亚克力）：挂到 html 上供 global.scss 覆盖 antd 背景变量，
-  // 让 WebView 内容半透明、透出 Rust 侧挂载的系统材质。引导窗口固定深色 UI，不参与。
+  // 窗口毛玻璃材质：挂到 html 上供 global.scss 完整复刻 TieZ 毛玻璃（半透明 antd 变量 +
+  // backdrop-filter 玻璃面），透出 Rust 侧挂载的系统亚克力材质。引导窗口固定深色 UI，不参与。
   useEffect(() => {
     const root = document.documentElement;
     const active =
       windowLabel !== WINDOW_LABEL.ONBOARDING && windowEffect !== "none";
 
     root.classList.toggle("vibrancy", active);
-    root.classList.toggle("vibrancy-mica", active && windowEffect === "mica");
     root.classList.toggle(
       "vibrancy-acrylic",
       active && windowEffect === "acrylic",
@@ -113,7 +111,6 @@ const App: FC = () => {
     <ConfigProvider locale={locale} modal={ANTD_MODAL_CONFIG} theme={antdTheme}>
       <AntdApp>
         <AppContent />
-        <CopyFeedback />
       </AntdApp>
     </ConfigProvider>
   );

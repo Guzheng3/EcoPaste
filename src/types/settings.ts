@@ -17,8 +17,8 @@ import type {
 /** Rust enum `Theme`（`rename_all = "lowercase"`）。 */
 export type Theme = "auto" | "light" | "dark";
 
-/** Rust enum `WindowEffect`（`rename_all = "lowercase"`）。 */
-export type WindowEffect = "none" | "mica" | "acrylic";
+/** Rust enum `WindowEffect`（`rename_all = "lowercase"`）；云母已废弃。 */
+export type WindowEffect = "none" | "acrylic";
 
 /** Rust enum `Language`（手动 `serde(rename)`）。 */
 export type Language = "zh-CN" | "en-US";

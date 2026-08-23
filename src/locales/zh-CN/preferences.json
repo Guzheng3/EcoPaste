@@ -221,10 +221,9 @@
           "title": "主题"
         },
         "windowEffect": {
-          "description": "为剪贴板窗口与预览浮窗应用系统毛玻璃材质；云母仅 Windows 11 支持，macOS 两种均为毛玻璃。",
+          "description": "为剪贴板窗口与预览浮窗应用系统毛玻璃材质。",
           "options": {
-            "acrylic": "亚克力",
-            "mica": "云母",
+            "acrylic": "毛玻璃",
             "none": "关闭"
           },
           "title": "窗口效果"

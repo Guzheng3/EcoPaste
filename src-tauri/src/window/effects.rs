@@ -1,13 +1,13 @@
-//! 窗口材质效果（毛玻璃 / 云母 / 亚克力）。
+//! 窗口材质效果（毛玻璃）。
 //!
 //! 思路照搬 TieZ（tiez-clipboard）：用 `window-vibrancy` 把系统材质挂到无边框透明窗口上
-//! （Windows = DWM Mica/Acrylic，macOS = NSVisualEffectView），前端再用半透明的 antd CSS
-//! 变量让 WebView 内容透出材质，两层配合才呈现完整毛玻璃观感。
+//! （Windows = DWM Acrylic，macOS = NSVisualEffectView），前端再用半透明 + backdrop-filter
+//! 的层叠（见 `src/styles/global.scss` 的 `vibrancy-acrylic`）完整复刻毛玻璃观感。两层配合：
+//! Rust 侧负责真实桌面模糊，前端负责窗口内玻璃面与炫光。
 //!
 //! 平台边界：
-//! - Windows：Mica 走 `DWMWA_SYSTEMBACKDROP_TYPE`，Win11 以下 DWM 拒绝该属性，效果自然回落为
-//!   普通透明；Acrylic 走 `SetWindowCompositionAttribute`，Win10 1803+ 与 Win11 均可用。
-//! - macOS：Mica / Acrylic 统一映射为 NSVisualEffectView 毛玻璃，按明暗主题选材质。
+//! - Windows：Acrylic 走 `SetWindowCompositionAttribute`，Win10 1803+ 与 Win11 均可用。
+//! - macOS：Acrylic 映射为 NSVisualEffectView 毛玻璃，按明暗主题选材质。
 
 use tauri::{AppHandle, Manager, Theme, WebviewWindow};
 
@@ -71,7 +71,7 @@ pub fn apply(window: &WebviewWindow, effect: WindowEffect) {
     let dark = window.theme().is_ok_and(|theme| theme == Theme::Dark);
 
     if let Err(err) = apply_effect(window, effect, dark) {
-        // Win10 选 Mica 等场景会走到这里：效果保持未应用状态，属预期回落而非故障。
+        // 老系统对 Acrylic 支持不佳会走到这里：效果保持未应用状态，属预期回落而非故障。
         log::warn!("apply window effect {effect:?} failed: {err}");
     }
 }
@@ -99,7 +99,6 @@ fn apply_effect(
     dark: bool,
 ) -> Result<(), window_vibrancy::Error> {
     match effect {
-        WindowEffect::Mica => window_vibrancy::apply_mica(window, Some(dark)),
         // 叠一层近实底色的 tint，让亚克力上的正文保持可读；数值照搬 TieZ。
         WindowEffect::Acrylic => window_vibrancy::apply_acrylic(
             window,

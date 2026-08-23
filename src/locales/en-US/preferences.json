@@ -221,10 +221,9 @@
           "title": "Theme"
         },
         "windowEffect": {
-          "description": "Apply a system material effect to the clipboard and preview windows. Mica requires Windows 11; both options render as frosted glass on macOS.",
+          "description": "Apply a frosted glass material effect to the clipboard and preview windows.",
           "options": {
             "acrylic": "Acrylic",
-            "mica": "Mica",
             "none": "Off"
           },
           "title": "Window effect"

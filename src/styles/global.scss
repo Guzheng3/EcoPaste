@@ -19,34 +19,82 @@ html {
 }
 
 /**
- * 窗口材质效果（毛玻璃/云母/亚克力）：把窗口根容器的 antd 背景换成半透明，
- * 透出 Rust 侧 window-vibrancy 挂载的系统材质。透明度取值参考 TieZ（tiez-clipboard）：
- * Mica 偏实底（内容可读性优先），Acrylic 更透（材质感更强）。
- * 只覆盖容器/布局层背景；Modal、Popover 等浮层用 colorBgElevated，保持实体背景。
+ * 毛玻璃（Acrylic）—— 完整复刻 TieZ（tiez-clipboard）的双层观感：
+ *
+ * 1. Rust 侧 window-vibrancy 挂载系统亚克力材质（真实桌面模糊），见
+ *    `src-tauri/src/window/effects.rs`；
+ * 2. 前端把窗口根壳（#root）做成玻璃面：半透明底 + `backdrop-filter` 模糊下方渐变层 +
+ *    圆角玻璃边框 + 高光渐变层，antd 容器背景同步换成半透明以透出玻璃。
+ *
+ * 亮 / 暗两套配色分别套用。浮层（Modal / Popover）走 `colorBgElevated`，保持较实体可读。
  */
-html.vibrancy {
+html.vibrancy-acrylic {
   body {
     background-color: transparent;
   }
+}
 
-  &.vibrancy-mica:not(.dark) {
-    --ant-color-bg-container: rgba(248, 248, 248, 0.9);
-    --ant-color-bg-layout: rgba(248, 248, 248, 0.9);
+/* 窗口根壳：圆角玻璃边框 + 背景模糊 + 高光渐变层 */
+html.vibrancy-acrylic #root {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  box-shadow: 0 10px 38px rgba(0, 0, 0, 0.16);
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+}
+
+html.vibrancy-acrylic #root::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background:
+    radial-gradient(140% 110% at 0% 0%, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0.03) 60%, transparent 100%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.02) 100%);
+}
+
+html.vibrancy-acrylic #root > * {
+  position: relative;
+  z-index: 1;
+}
+
+html.vibrancy-acrylic:not(.dark) {
+  /* 浅色底面，供 backdrop-filter 模糊 */
+  body {
+    background:
+      radial-gradient(120% 120% at 8% 8%, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0.08) 52%, rgba(255, 255, 255, 0.02) 100%),
+      linear-gradient(160deg, rgba(170, 190, 220, 0.12) 0%, rgba(210, 220, 236, 0.06) 45%, rgba(180, 195, 215, 0.11) 100%);
   }
 
-  &.vibrancy-mica.dark {
-    --ant-color-bg-container: rgba(24, 24, 24, 0.82);
-    --ant-color-bg-layout: rgba(24, 24, 24, 0.82);
+  --ant-color-bg-container: rgba(252, 252, 252, 0.5);
+  --ant-color-bg-layout: rgba(252, 252, 252, 0.5);
+  --ant-color-bg-elevated: rgba(255, 255, 255, 0.82);
+}
+
+html.vibrancy-acrylic.dark {
+  body {
+    background:
+      radial-gradient(120% 120% at 10% 8%, rgba(120, 138, 164, 0.2) 0%, rgba(74, 86, 108, 0.08) 48%, rgba(48, 56, 72, 0.18) 100%),
+      linear-gradient(150deg, rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0.07) 100%);
   }
 
-  &.vibrancy-acrylic:not(.dark) {
-    --ant-color-bg-container: rgba(252, 252, 252, 0.56);
-    --ant-color-bg-layout: rgba(252, 252, 252, 0.56);
+  --ant-color-bg-container: rgba(20, 20, 20, 0.5);
+  --ant-color-bg-layout: rgba(20, 20, 20, 0.5);
+  --ant-color-bg-elevated: rgba(30, 30, 30, 0.86);
+
+  #root {
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 10px 38px rgba(0, 0, 0, 0.32);
   }
 
-  &.vibrancy-acrylic.dark {
-    --ant-color-bg-container: rgba(20, 20, 20, 0.52);
-    --ant-color-bg-layout: rgba(20, 20, 20, 0.52);
+  #root::before {
+    background:
+      radial-gradient(140% 120% at 0% 0%, rgba(255, 255, 255, 0.09) 0%, rgba(255, 255, 255, 0.02) 55%, transparent 100%),
+      linear-gradient(160deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.01) 100%);
   }
 }
 

@@ -553,18 +553,13 @@ export const preferenceTabs: PreferenceTab[] = [
           },
           {
             control: {
-              options: [
-                { value: "none" },
-                { value: "mica" },
-                { value: "acrylic" },
-              ],
+              options: [{ value: "acrylic" }, { value: "none" }],
               type: "segmented",
             },
             id: "appearance.windowEffect",
             keywords: [
               "window",
               "effect",
-              "mica",
               "acrylic",
               "vibrancy",
               "blur",
