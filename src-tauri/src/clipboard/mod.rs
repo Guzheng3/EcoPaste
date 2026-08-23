@@ -30,7 +30,7 @@ pub use ingest::build_item_with_settings;
 pub use payload::{ClipboardPayload, ImagePayload, TextPayload};
 pub use read::ClipboardReader;
 pub use sound::play_copy_sound;
-pub use source::detect_frontmost;
+pub use source::{detect_frontmost, init_window_tracking};
 pub use storage::ImageStore;
 pub use watcher::{init, materialize_source, persist_and_notify, WatcherPause};
 pub use write::write_to_clipboard;

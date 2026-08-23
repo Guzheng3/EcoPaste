@@ -171,6 +171,9 @@ pub fn run() {
         .setup(move |app| {
             let handle = app.handle().clone();
 
+            // Windows 前台窗口追踪（macOS 为空操作）：提高「复制来源应用」归属准确度。
+            clipboard::init_window_tracking();
+
             // macOS：plugin 必须在 to_panel 前注册。
             #[cfg(target_os = "macos")]
             window::macos::register_plugin(&handle);
