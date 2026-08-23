@@ -19,6 +19,9 @@ pub struct Settings {
     pub clipboard: Clipboard,
     pub onboarding: Onboarding,
     pub update: Update,
+    /// 内部一次性迁移标记：首次加载旧配置时把「复制成功提示」强制开启并落盘，
+    /// 之后再启动尊重用户手动开关，不再覆盖。前端不依赖该字段。
+    pub copy_feedback_migrated: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -639,10 +642,17 @@ pub enum WindowPosition {
     Center,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Feedback {
     pub copy_sound: bool,
+}
+
+impl Default for Feedback {
+    fn default() -> Self {
+        // 复制成功提示默认开启，与原「复制音效」默认行为一致。
+        Self { copy_sound: true }
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]

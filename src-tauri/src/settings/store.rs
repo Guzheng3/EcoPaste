@@ -133,7 +133,11 @@ impl SettingsStore {
 
 /// 生成默认设置，并沿用首次启动的系统语言推导规则。
 fn default_settings_with_system_locale() -> Settings {
-    let mut settings = Settings::default();
+    // 全新默认已包含最新的复制提示语义，直接视为已迁移，避免下次启动重复回写。
+    let mut settings = Settings {
+        copy_feedback_migrated: true,
+        ..Settings::default()
+    };
     if let Some(tag) = tauri_plugin_os::locale() {
         settings.appearance.language = Language::from_system_locale(&tag);
         log::info!(
@@ -156,12 +160,35 @@ fn load_from_disk(path: &Path) -> Option<Settings> {
         serde_json::from_str::<Settings>(&content)
             .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))
     }) {
-        Ok(settings) => Some(settings),
+        Ok(mut settings) => {
+            // 一次性迁移：旧配置里「复制成功提示」可能被默认成关闭，强制开启一次并回写。
+            if migrate_settings(&mut settings) {
+                if let Err(err) = write_atomic(path, &settings) {
+                    log::warn!("persist settings migration failed: {err}");
+                }
+            }
+            Some(settings)
+        }
         Err(err) => {
             log::warn!("settings file {path:?} unreadable, using defaults: {err}");
             Some(Settings::default())
         }
     }
+}
+
+/// 从旧版本到当前版本的必要设置迁移。返回本次是否发生了改动（需回写磁盘）。
+///
+/// 目前仅有一条：`copy_feedback_migrated` 未置位过（即旧配置文件）时，
+/// 把 `clipboard.feedback.copy_sound`（复制成功提示）强制改为开启，并打上迁移标记；
+/// 之后启动不再触碰该开关，尊重用户手动设置。
+fn migrate_settings(settings: &mut Settings) -> bool {
+    if settings.copy_feedback_migrated {
+        return false;
+    }
+
+    settings.copy_feedback_migrated = true;
+    settings.clipboard.feedback.copy_sound = true;
+    true
 }
 
 /// 写入策略：把新内容写到 tmp 后 rename 成主文件；rename 在同一文件系统下是原子的。

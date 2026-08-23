@@ -218,6 +218,7 @@ export interface Settings {
   clipboard: Clipboard;
   onboarding: Onboarding;
   update: Update;
+  copyFeedbackMigrated?: boolean;
 }
 
 /**
