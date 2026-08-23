@@ -572,6 +572,40 @@ export const preferenceTabs: PreferenceTab[] = [
           },
           {
             control: {
+              max: 100,
+              min: 0,
+              step: 5,
+              suffixKey: "percent",
+              type: "slider",
+            },
+            disabledWhen: (settings) =>
+              settings.appearance.windowEffect === "none",
+            id: "appearance.acrylicOpacity",
+            keywords: ["glass", "opacity", "transparency", "tint", "alpha"],
+            path: ["appearance", "acrylicOpacity"],
+            value: (settings) => {
+              return settings.appearance.acrylicOpacity;
+            },
+          },
+          {
+            control: {
+              max: 100,
+              min: 0,
+              step: 5,
+              suffixKey: "percent",
+              type: "slider",
+            },
+            disabledWhen: (settings) =>
+              settings.appearance.windowEffect === "none",
+            id: "appearance.acrylicBlur",
+            keywords: ["glass", "blur", "frosted", "depth"],
+            path: ["appearance", "acrylicBlur"],
+            value: (settings) => {
+              return settings.appearance.acrylicBlur;
+            },
+          },
+          {
+            control: {
               options: LANGUAGE_OPTIONS,
               type: "segmented",
             },

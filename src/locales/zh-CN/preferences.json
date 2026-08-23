@@ -64,6 +64,7 @@
       "items": "条",
       "lines": "行",
       "mb": "MB",
+      "percent": "%",
       "px": "px",
       "seconds": "秒"
     },
@@ -187,6 +188,14 @@
         }
       },
       "appearance": {
+        "acrylicBlur": {
+          "description": "玻璃后面背景的模糊程度。值越大越柔和、越能突出前景内容。",
+          "title": "模糊度"
+        },
+        "acrylicOpacity": {
+          "description": "玻璃后面桌面内容透出的程度。值越大越能看清背景；值越小玻璃后面越实。",
+          "title": "透光度"
+        },
         "fileMaxCount": {
           "description": "限制文件记录在列表卡片中最多显示的文件数量。",
           "title": "文件最多显示数量"

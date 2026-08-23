@@ -79,6 +79,11 @@ pub struct Appearance {
     pub theme: Theme,
     pub language: Language,
     pub window_effect: WindowEffect,
+    /// 毛玻璃透光度（0 = 完全不透明、100 = 完全透明）。值越低玻璃后面越实、越高越透。
+    /// 同时影响系统亚克力的 tint alpha 和前端 antd 容器背景的 alpha。
+    pub acrylic_opacity: u8,
+    /// 毛玻璃模糊度（0 = 不模糊、100 = 强烈模糊）。影响前端 `backdrop-filter: blur()`。
+    pub acrylic_blur: u8,
 }
 
 impl Default for Appearance {
@@ -88,8 +93,21 @@ impl Default for Appearance {
             language: Language::ZhCN,
             // 默认毛玻璃（Acrylic），完全复刻 TieZ 双层观感；云母已废弃。
             window_effect: WindowEffect::Acrylic,
+            // 默认透光度 50（半透），与 TieZ 观感保持一致。
+            acrylic_opacity: 50,
+            // 默认模糊度 50（中度模糊）。
+            acrylic_blur: 50,
         }
     }
+}
+
+/// 把 0-100 的透光度值转换为 0-255 的 alpha 通道。
+/// `100` 完全透明 = alpha 0；`0` 完全不透明 = alpha 255。
+#[inline]
+pub fn opacity_to_alpha(opacity: u8) -> u8 {
+    let clamped = opacity.min(100);
+    // 反向：透光度 100 → alpha 0；透光度 0 → alpha 255
+    ((100u16 - u16::from(clamped)) * 255 / 100) as u8
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]

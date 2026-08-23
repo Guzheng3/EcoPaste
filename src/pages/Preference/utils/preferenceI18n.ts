@@ -124,13 +124,15 @@ export function translatePreferencePlaceholder(
 }
 
 /**
- * 翻译数字控件后缀；有显式 suffixKey 时走公共单位表，否则回退到设置项本地默认值。
+ * 翻译数字 / 滑块控件后缀；有显式 suffixKey 时走公共单位表。
  */
 export function translatePreferenceNumberSuffix(
   t: PreferenceTranslator,
   setting: PreferenceSetting,
 ) {
-  if (setting.control.type !== "number") return "";
+  if (setting.control.type !== "number" && setting.control.type !== "slider") {
+    return "";
+  }
 
   if (setting.control.suffixKey) {
     return t(`schema.numberSuffixes.${setting.control.suffixKey}`);

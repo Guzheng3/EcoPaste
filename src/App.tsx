@@ -32,6 +32,24 @@ const resolveAntdLocale = (language: Language) => {
   return zhCN;
 };
 
+/**
+ * 把 0-100 的透光度转换为 0-1 之间的 alpha 值，供 `--glass-tint-alpha` 写入。
+ * 与 Rust `opacity_to_alpha` 的反向关系：透光度 0 → alpha 1（实色），透光度 100 → alpha 0（完全透明）。
+ */
+const resolveTintAlpha = (opacity: number) => {
+  const clamped = Math.max(0, Math.min(100, opacity));
+  return ((100 - clamped) / 100).toFixed(2);
+};
+
+/**
+ * 把 0-100 的模糊度映射到 `backdrop-filter: blur(<px>)` 的像素值。
+ * 0 = 不模糊（0px），100 = 强烈模糊（48px），与 TieZ 视觉量级一致。
+ */
+const resolveBlurPx = (blur: number) => {
+  const clamped = Math.max(0, Math.min(100, blur));
+  return Math.round((clamped / 100) * 48);
+};
+
 const AppContent: FC = () => {
   const { message, modal } = AntdApp.useApp();
 
@@ -59,15 +77,20 @@ const App: FC = () => {
       : settings.appearance.theme;
   const language = settings.appearance.language;
   const windowEffect = settings.appearance.windowEffect;
+  const acrylicOpacity = settings.appearance.acrylicOpacity;
+  const acrylicBlur = settings.appearance.acrylicBlur;
   const antdTheme = useAppTheme(mode);
   const locale = resolveAntdLocale(language);
 
   // 窗口毛玻璃材质：挂到 html 上供 global.scss 完整复刻 TieZ 毛玻璃（半透明 antd 变量 +
-  // backdrop-filter 玻璃面），透出 Rust 侧挂载的系统亚克力材质。引导窗口固定深色 UI，不参与。
+  // backdrop-filter 玻璃面），透出 Rust 侧挂载的系统亚克力材质。引导窗口固定深色 UI，不参与；
+  // 复制成功小气泡（copied）自带胶囊样式，也跳过全局玻璃壳（见 :not(.copied-root)）。
   useEffect(() => {
     const root = document.documentElement;
-    const active =
-      windowLabel !== WINDOW_LABEL.ONBOARDING && windowEffect !== "none";
+    const isFloatingWindow =
+      windowLabel !== WINDOW_LABEL.ONBOARDING &&
+      windowLabel !== WINDOW_LABEL.COPIED;
+    const active = isFloatingWindow && windowEffect !== "none";
 
     root.classList.toggle("vibrancy", active);
     root.classList.toggle(
@@ -75,6 +98,15 @@ const App: FC = () => {
       active && windowEffect === "acrylic",
     );
   }, [windowLabel, windowEffect]);
+
+  // 毛玻璃透光度 / 模糊度：把设置项映射到 CSS 变量，slider 拖动时实时刷新。
+  useEffect(() => {
+    const root = document.documentElement;
+    const tintAlpha = resolveTintAlpha(acrylicOpacity);
+    const blurPx = resolveBlurPx(acrylicBlur);
+    root.style.setProperty("--glass-tint-alpha", tintAlpha);
+    root.style.setProperty("--glass-blur", `${blurPx}px`);
+  }, [acrylicOpacity, acrylicBlur]);
 
   useEffect(() => {
     document.documentElement.lang = language;

@@ -27,37 +27,49 @@ html {
  *    圆角玻璃边框 + 高光渐变层，antd 容器背景同步换成半透明以透出玻璃。
  *
  * 亮 / 暗两套配色分别套用。浮层（Modal / Popover）走 `colorBgElevated`，保持较实体可读。
+ *
+ * 透光度（`--glass-tint-alpha`）与模糊度（`--glass-blur`）由 `App.tsx` 监听设置变化
+ * 实时写入 `<html style>`，用户改 slider 时不需要重新构建。
+ * 默认值（透光度 50 / 模糊度 50）也在此处提供，作为 CSS 变量未设置时的兜底。
  */
-html.vibrancy-acrylic {
-  body {
-    background-color: transparent;
-  }
+:root {
+  --glass-tint-alpha: 0.5;
+  --glass-blur: 18px;
+  --glass-saturate: 150%;
+  --glass-highlight: 0.22;
+  --glass-highlight-2: 0.12;
 }
 
-/* 窗口根壳：圆角玻璃边框 + 背景模糊 + 高光渐变层 */
-html.vibrancy-acrylic #root {
+html.vibrancy-acrylic body {
+  background-color: transparent;
+}
+
+/* 窗口根壳：圆角玻璃边框 + 背景模糊 + 高光渐变层。
+   排除 `copied` 复制成功小气泡：它是独立透明窗，玻璃壳自带胶囊样式，不应被外层
+   圆角 + 边框 + 阴影包住。 */
+html.vibrancy-acrylic #root:not(.copied-root) {
   position: relative;
   isolation: isolate;
   overflow: hidden;
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.32);
   box-shadow: 0 10px 38px rgba(0, 0, 0, 0.16);
-  backdrop-filter: blur(18px) saturate(150%);
-  -webkit-backdrop-filter: blur(18px) saturate(150%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
 
-html.vibrancy-acrylic #root::before {
+html.vibrancy-acrylic #root:not(.copied-root)::before {
   content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
   border-radius: inherit;
   background:
-    radial-gradient(140% 110% at 0% 0%, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0.03) 60%, transparent 100%),
-    linear-gradient(145deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.02) 100%);
+    radial-gradient(140% 110% at 0% 0%, rgba(255, 255, 255, var(--glass-highlight)) 0%, rgba(255, 255, 255, 0.03) 60%, transparent 100%),
+    linear-gradient(145deg, rgba(255, 255, 255, var(--glass-highlight-2)) 0%, rgba(255, 255, 255, 0.02) 100%);
 }
 
-html.vibrancy-acrylic #root > * {
+html.vibrancy-acrylic #root:not(.copied-root) > * {
   position: relative;
   z-index: 1;
 }
@@ -70,8 +82,8 @@ html.vibrancy-acrylic:not(.dark) {
       linear-gradient(160deg, rgba(170, 190, 220, 0.12) 0%, rgba(210, 220, 236, 0.06) 45%, rgba(180, 195, 215, 0.11) 100%);
   }
 
-  --ant-color-bg-container: rgba(252, 252, 252, 0.5);
-  --ant-color-bg-layout: rgba(252, 252, 252, 0.5);
+  --ant-color-bg-container: rgba(252, 252, 252, var(--glass-tint-alpha));
+  --ant-color-bg-layout: rgba(252, 252, 252, var(--glass-tint-alpha));
   --ant-color-bg-elevated: rgba(255, 255, 255, 0.82);
 }
 
@@ -82,24 +94,66 @@ html.vibrancy-acrylic.dark {
       linear-gradient(150deg, rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0.07) 100%);
   }
 
-  --ant-color-bg-container: rgba(20, 20, 20, 0.5);
-  --ant-color-bg-layout: rgba(20, 20, 20, 0.5);
+  --ant-color-bg-container: rgba(20, 20, 20, var(--glass-tint-alpha));
+  --ant-color-bg-layout: rgba(20, 20, 20, var(--glass-tint-alpha));
   --ant-color-bg-elevated: rgba(30, 30, 30, 0.86);
 
-  #root {
+  #root:not(.copied-root) {
     border-color: rgba(255, 255, 255, 0.12);
     box-shadow: 0 10px 38px rgba(0, 0, 0, 0.32);
   }
 
-  #root::before {
+  #root:not(.copied-root)::before {
     background:
       radial-gradient(140% 120% at 0% 0%, rgba(255, 255, 255, 0.09) 0%, rgba(255, 255, 255, 0.02) 55%, transparent 100%),
       linear-gradient(160deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.01) 100%);
   }
 }
 
-.os-scrollbar-handle {
+/* 主列表虚拟滚动：默认 OS 滚动条在右侧会露出一条灰条（用户报"丑滑块"）。
+   把 OS 滚动条宽度收为 0，仅保留鼠标滚轮 / 触摸滚动行为；自定义滚动条由 OverlayScrollbars
+   在 hover/scroll 时显示。 */
+html.vibrancy-acrylic .os-scrollbar-handle {
   --os-handle-bg: var(--ant-color-text-quaternary);
   --os-handle-bg-hover: var(--ant-color-text-tertiary);
   --os-handle-bg-active: var(--ant-color-text-secondary);
+  --os-size: 0;
+  --os-size-hover: 6px;
+  --os-size-active: 8px;
+  --os-track-padding: 0;
+  --os-track-border-radius: 0;
+  --os-handle-border-radius: 999px;
+  --os-handle-min-size: 24px;
+  --os-handle-max-size: 100%;
+  --os-handle-perpendicular-size: 6px;
+  --os-handle-perpendicular-size-hover: 8px;
+  --os-handle-perpendicular-size-active: 10px;
+  --os-transition-duration: 200ms;
+  --os-transition-function: ease;
+}
+
+/* 复制的「已复制」小气泡：底部居中、自身带玻璃胶囊，与主窗口 #root 玻璃壳互不干扰。 */
+html.vibrancy-acrylic .copied-toast {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  color: var(--ant-color-text);
+  font-size: 12px;
+  line-height: 1;
+  user-select: none;
+}
+
+html.vibrancy-acrylic.dark .copied-toast {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(30, 30, 30, 0.62);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+  color: rgba(255, 255, 255, 0.92);
 }

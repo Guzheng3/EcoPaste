@@ -43,8 +43,13 @@ fn monitor_from_cursor(
     )))
 }
 
-/// 剪贴板窗口尺寸自适应：设计默认 587×1055，按光标所在屏工作区 + DPI 等比缩放适配，
-/// 保证完整落在可用区域内。只等比缩小、不放大超过设计尺寸（即小屏变小、大屏保持设计值）。
+/// 剪贴板窗口尺寸自适应：设计默认 587×1055（逻辑/CSS 像素），按光标所在屏工作区 + DPI
+/// 等比缩放适配，保证完整落在可用区域内（每边留 FIT_MARGIN）。小屏等比缩小，大屏保持
+/// 设计尺寸不放大。
+///
+/// 关键：`work_size` 与 `position` 是**物理像素**，必须先除以 `scale_factor` 换算到逻辑像素，
+/// 再与设计值比较。直接拿物理工作区除设计值会被 `clamp(0.01, 1.0)` 钳到 1.0，再乘上 `scale`
+/// 就把设计值又放大一遍（典型 DPI 1.5 上 ≈ 819×1490），看起来像窗口没缩放。
 pub fn fit_default_size(window: &WebviewWindow) -> Result<()> {
     let Some((monitor, _)) = monitor_from_cursor(window)? else {
         return Ok(());
@@ -60,12 +65,14 @@ pub fn fit_default_size(window: &WebviewWindow) -> Result<()> {
         .min(avail_h / DEFAULT_WINDOW_HEIGHT)
         .clamp(0.01, 1.0);
 
-    // 逻辑尺寸再乘 DPI，得到物理像素尺寸。
-    let w = (DEFAULT_WINDOW_WIDTH * ratio * scale).round().max(1.0) as u32;
-    let h = (DEFAULT_WINDOW_HEIGHT * ratio * scale).round().max(1.0) as u32;
+    // 逻辑尺寸就是设计尺寸 × ratio；物理尺寸 = 逻辑 × scale（写入 Tauri 必须用物理像素）。
+    let logical_w = DEFAULT_WINDOW_WIDTH * ratio;
+    let logical_h = DEFAULT_WINDOW_HEIGHT * ratio;
+    let physical_w = (logical_w * scale).round().max(1.0) as u32;
+    let physical_h = (logical_h * scale).round().max(1.0) as u32;
 
     window
-        .set_size(PhysicalSize::new(w, h))
+        .set_size(PhysicalSize::new(physical_w, physical_h))
         .map_err(|e| anyhow::anyhow!(e))?;
 
     Ok(())

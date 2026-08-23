@@ -17,8 +17,8 @@ pub const COPIED_WINDOW_LABEL: &str = "copied";
 /// 卡片尺寸（logical px），前端 `/copied` 页 CSS 与其保持一致。
 const WINDOW_WIDTH: f64 = 168.0;
 const WINDOW_HEIGHT: f64 = 44.0;
-/// 距屏幕右下角的留白（logical px）。
-const SCREEN_MARGIN: f64 = 20.0;
+/// 距屏幕底部的留白（logical px）。底部居中显示。
+const SCREEN_BOTTOM_MARGIN: f64 = 56.0;
 /// 展示时长后自动隐藏。
 const HIDE_AFTER: Duration = Duration::from_millis(1500);
 
@@ -65,7 +65,8 @@ fn show_inner(app: &AppHandle) -> Result<()> {
         .get_webview_window(COPIED_WINDOW_LABEL)
         .ok_or_else(|| AppError::Other(anyhow::anyhow!("copied window missing")))?;
 
-    // 右下角定位：优先放剪贴板窗口所在显示器，其次主显示器。
+    // 底部居中定位：优先放剪贴板窗口所在显示器，其次主显示器。
+    // 不再是右下角——与主流截图/通知弹窗位置一致，视觉中心化。
     let monitor = app
         .get_webview_window(crate::window::CLIPBOARD_WINDOW_LABEL)
         .and_then(|w| w.current_monitor().ok().flatten())
@@ -78,10 +79,12 @@ fn show_inner(app: &AppHandle) -> Result<()> {
         let win_size = window
             .inner_size()
             .map_err(|e| AppError::Other(anyhow::anyhow!(e)))?;
-        let margin = (SCREEN_MARGIN * scale) as i32;
+        let bottom_margin = (SCREEN_BOTTOM_MARGIN * scale) as i32;
 
-        let x = mon_pos.x + mon_size.width as i32 - win_size.width as i32 - margin;
-        let y = mon_pos.y + mon_size.height as i32 - win_size.height as i32 - margin;
+        // 水平居中：屏幕中心 - 窗口宽度的一半。
+        let x = mon_pos.x + (mon_size.width as i32 - win_size.width as i32) / 2;
+        // 贴底部：屏幕底 - 窗口高度 - 边距。
+        let y = mon_pos.y + mon_size.height as i32 - win_size.height as i32 - bottom_margin;
         window
             .set_position(PhysicalPosition::new(x, y))
             .map_err(|err| AppError::Other(anyhow::anyhow!("copied toast position: {err}")))?;

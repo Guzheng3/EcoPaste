@@ -15,6 +15,10 @@ export const WINDOW_LABEL = {
    */
   CONTEXT_SUBMENU: "context-submenu",
   /**
+   * 复制成功小气泡窗口：与主窗口解耦的置顶透明弹窗。
+   */
+  COPIED: "copied",
+  /**
    * 首次启动引导窗口。
    */
   ONBOARDING: "onboarding",

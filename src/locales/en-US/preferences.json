@@ -64,6 +64,7 @@
       "items": "items",
       "lines": "lines",
       "mb": "MB",
+      "percent": "%",
       "px": "px",
       "seconds": "seconds"
     },
@@ -187,6 +188,14 @@
         }
       },
       "appearance": {
+        "acrylicBlur": {
+          "description": "How much the background is blurred. Higher values soften the background and put more focus on the foreground.",
+          "title": "Blur"
+        },
+        "acrylicOpacity": {
+          "description": "How much the desktop behind the glass shows through. Higher values reveal more; lower values make the glass look more solid.",
+          "title": "Transparency"
+        },
         "fileMaxCount": {
           "description": "Limit how many files are shown in each file record card.",
           "title": "Maximum Files Shown"
