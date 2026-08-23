@@ -11,22 +11,28 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use super::storage::ImageStore;
 use super::watcher::CLIPBOARD_UPDATED_EVENT;
-use crate::db::items::cleanup_history;
+use crate::db::items::{cleanup_history, cleanup_sensitive_expired};
 use crate::settings::{Retention, RetentionUnit, SettingsStore};
 
 /// 调度器检查设置与到期状态的频率；真正清理只在用户设置周期到期后执行。
 const SCHEDULER_TICK_INTERVAL: Duration = Duration::from_secs(60);
 
-/// 启动历史清理后台任务：启动立即清理一次，之后按设置周期到点清理。
+/// 启动后台清理任务：启动立即清理一次，之后每个调度心跳做一次敏感条目过期清理，
+/// 并按设置周期到点执行历史容量清理。
 pub fn spawn(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         run_once(&app).await;
+        run_sensitive_cleanup(&app).await;
         let mut last_cleanup_at = Instant::now();
         let mut ticker = tokio::time::interval(SCHEDULER_TICK_INTERVAL);
         ticker.tick().await;
 
         loop {
             ticker.tick().await;
+
+            // 敏感条目 TTL 可短至 1 小时，需在每个心跳都检查到期（DELETE 有索引，代价低）。
+            run_sensitive_cleanup(&app).await;
+
             let Some(interval) = cleanup_interval(&app) else {
                 continue;
             };
@@ -68,6 +74,29 @@ async fn run_once(app: &AppHandle) {
             }
         }
         Err(err) => log::warn!("history cleanup failed: {err}"),
+    }
+}
+
+/// 删除 TTL 已过期的敏感条目（收藏项豁免，见 [`cleanup_sensitive_expired`]）。
+/// 失败只记日志；被删图片文件的落盘清理复用 [`remove_images`]。
+async fn run_sensitive_cleanup(app: &AppHandle) {
+    let pool = app.state::<crate::db::DatabaseState>().pool().await;
+    let now = Utc::now();
+    match cleanup_sensitive_expired(&pool, now).await {
+        Ok(outcome) if outcome.removed == 0 => {}
+        Ok(outcome) => {
+            if !outcome.image_files.is_empty() {
+                remove_images(app, &outcome.image_files);
+            }
+            log::info!("sensitive cleanup removed {} item(s)", outcome.removed);
+            if let Err(err) = app.emit(
+                CLIPBOARD_UPDATED_EVENT,
+                json!({ "cleanup": outcome.removed }),
+            ) {
+                log::warn!("emit sensitive cleanup event failed: {err}");
+            }
+        }
+        Err(err) => log::warn!("sensitive cleanup failed: {err}"),
     }
 }
 

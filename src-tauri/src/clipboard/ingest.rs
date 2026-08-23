@@ -13,7 +13,7 @@ use chrono::Utc;
 
 use super::detect::detect_text_sub_kind;
 use super::payload::{ClipboardPayload, TextPayload};
-use super::secrets::contains_secret;
+use super::secrets::{contains_personal_info, contains_secret};
 use super::storage::ImageStore;
 use crate::core::Result;
 use crate::db::items::content_hash;
@@ -200,7 +200,9 @@ pub fn build_item_with_settings(
     let mut is_sensitive = false;
     let draft = match payload {
         ClipboardPayload::Text(text) => {
-            if contains_secret(&text.text) {
+            // 敏感判定：高置信密钥 / Token 或高置信个人隐私（身份证、手机号、银行卡）。
+            // 命中且未开启收录 → 整条不入库；开启收录 → 入库并标记敏感（过期自毁 + 脱敏）。
+            if contains_secret(&text.text) || contains_personal_info(&text.text) {
                 if !sensitive.collect_secrets {
                     return Ok(None);
                 }
@@ -300,6 +302,14 @@ pub fn build_item_with_settings(
     }
 
     let now = Utc::now();
+    // 敏感条目且配置了 TTL → 设置过期时间供清理任务自动清除；未开 TTL / 非敏感条目为 None。
+    let sensitive_expires_at = if is_sensitive {
+        let ttl_hours = u64::from(sensitive.sensitive_ttl_hours);
+        (ttl_hours > 0).then(|| now + chrono::Duration::hours(ttl_hours as i64))
+    } else {
+        None
+    };
+
     Ok(Some(ClipboardItem {
         id: uuid::Uuid::new_v4().to_string(),
         content_hash: content_hash(draft.kind, &draft.content),
@@ -318,6 +328,7 @@ pub fn build_item_with_settings(
         is_favorite: false,
         is_pinned: false,
         is_sensitive,
+        sensitive_expires_at,
         platform: current_platform(),
         note: None,
         created_at: now,
@@ -646,6 +657,7 @@ mod tests {
             &Sensitive {
                 collect_secrets: true,
                 redact_secrets: false,
+                ..Default::default()
             },
             false,
         )
@@ -667,6 +679,7 @@ mod tests {
             &Sensitive {
                 collect_secrets: false,
                 redact_secrets: true,
+                ..Default::default()
             },
             false,
         )
@@ -685,6 +698,7 @@ mod tests {
             &Sensitive {
                 collect_secrets: true,
                 redact_secrets: true,
+                ..Default::default()
             },
             false,
         )
@@ -722,6 +736,7 @@ mod tests {
             &Sensitive {
                 collect_secrets: true,
                 redact_secrets: true,
+                ..Default::default()
             },
             false,
         )

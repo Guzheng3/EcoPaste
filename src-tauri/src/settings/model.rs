@@ -75,6 +75,7 @@ pub enum OnboardingLegacyImportType {
 pub struct Appearance {
     pub theme: Theme,
     pub language: Language,
+    pub window_effect: WindowEffect,
 }
 
 impl Default for Appearance {
@@ -82,6 +83,7 @@ impl Default for Appearance {
         Self {
             theme: Theme::Auto,
             language: Language::ZhCN,
+            window_effect: WindowEffect::None,
         }
     }
 }
@@ -93,6 +95,20 @@ pub enum Theme {
     Auto,
     Light,
     Dark,
+}
+
+/// 窗口材质效果（毛玻璃 / 云母 / 亚克力）。
+///
+/// - Windows：`Mica` 仅 Win11（DWM 材质）；`Acrylic` 仅 Win11（Win10 上合成器性能差，不启用）。
+/// - macOS：`Mica` / `Acrylic` 统一映射为 NSVisualEffectView 毛玻璃。
+/// - `None`：普通不透明窗口背景。
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum WindowEffect {
+    #[default]
+    None,
+    Mica,
+    Acrylic,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -251,7 +267,7 @@ impl CaptureKind {
     }
 }
 
-/// 隐私保护设置。命中规则的内容可分别控制是否收录、是否脱敏展示。
+/// 隐私保护设置。命中的内容可分别控制是否收录、是否脱敏展示。
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Sensitive {
@@ -259,6 +275,9 @@ pub struct Sensitive {
     pub collect_secrets: bool,
     /// 已保存的敏感内容是否在列表与预览中脱敏展示。
     pub redact_secrets: bool,
+    /// 未收藏的敏感内容自动清除的有效期（小时）。`0` = 不自动清除。
+    /// 手动收藏的敏感条目豁免清除，始终保留。
+    pub sensitive_ttl_hours: u32,
 }
 
 impl Default for Sensitive {
@@ -266,6 +285,7 @@ impl Default for Sensitive {
         Self {
             collect_secrets: true,
             redact_secrets: true,
+            sensitive_ttl_hours: 1,
         }
     }
 }

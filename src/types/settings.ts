@@ -17,6 +17,9 @@ import type {
 /** Rust enum `Theme`（`rename_all = "lowercase"`）。 */
 export type Theme = "auto" | "light" | "dark";
 
+/** Rust enum `WindowEffect`（`rename_all = "lowercase"`）。 */
+export type WindowEffect = "none" | "mica" | "acrylic";
+
 /** Rust enum `Language`（手动 `serde(rename)`）。 */
 export type Language = "zh-CN" | "en-US";
 
@@ -79,6 +82,7 @@ export interface General {
 export interface Appearance {
   theme: Theme;
   language: Language;
+  windowEffect: WindowEffect;
 }
 
 export interface Shortcuts {
@@ -128,6 +132,8 @@ export interface Capture {
 export interface Sensitive {
   collectSecrets: boolean;
   redactSecrets: boolean;
+  /** 未收藏的敏感内容自动清除有效期（小时）。`0` 表示不自动清除。 */
+  sensitiveTtlHours: number;
 }
 
 export interface Retention {

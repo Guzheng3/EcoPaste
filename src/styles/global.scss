@@ -18,6 +18,38 @@ html {
   }
 }
 
+/**
+ * 窗口材质效果（毛玻璃/云母/亚克力）：把窗口根容器的 antd 背景换成半透明，
+ * 透出 Rust 侧 window-vibrancy 挂载的系统材质。透明度取值参考 TieZ（tiez-clipboard）：
+ * Mica 偏实底（内容可读性优先），Acrylic 更透（材质感更强）。
+ * 只覆盖容器/布局层背景；Modal、Popover 等浮层用 colorBgElevated，保持实体背景。
+ */
+html.vibrancy {
+  body {
+    background-color: transparent;
+  }
+
+  &.vibrancy-mica:not(.dark) {
+    --ant-color-bg-container: rgba(248, 248, 248, 0.9);
+    --ant-color-bg-layout: rgba(248, 248, 248, 0.9);
+  }
+
+  &.vibrancy-mica.dark {
+    --ant-color-bg-container: rgba(24, 24, 24, 0.82);
+    --ant-color-bg-layout: rgba(24, 24, 24, 0.82);
+  }
+
+  &.vibrancy-acrylic:not(.dark) {
+    --ant-color-bg-container: rgba(252, 252, 252, 0.56);
+    --ant-color-bg-layout: rgba(252, 252, 252, 0.56);
+  }
+
+  &.vibrancy-acrylic.dark {
+    --ant-color-bg-container: rgba(20, 20, 20, 0.52);
+    --ant-color-bg-layout: rgba(20, 20, 20, 0.52);
+  }
+}
+
 .os-scrollbar-handle {
   --os-handle-bg: var(--ant-color-text-quaternary);
   --os-handle-bg-hover: var(--ant-color-text-tertiary);

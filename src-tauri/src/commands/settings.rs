@@ -50,6 +50,10 @@ pub async fn update_settings(app: AppHandle, patch: serde_json::Value) -> Result
                 .is_some_and(|g| g.contains_key("runAsAdmin"))
         })
         .unwrap_or(false);
+    // appearance 段变化会影响窗口材质效果（windowEffect 本身或 theme 的明暗）。
+    let touches_window_effect = patch_obj
+        .map(|m| m.contains_key("appearance"))
+        .unwrap_or(false);
 
     let next = app.state::<SettingsStore>().update(patch)?;
 
@@ -69,6 +73,10 @@ pub async fn update_settings(app: AppHandle, patch: serde_json::Value) -> Result
         admin::sync_scheduled_task(next.general.run_as_admin);
     }
 
+    if touches_window_effect {
+        window::effects::apply_all(&app);
+    }
+
     emit_settings_updated(&app, &next);
 
     Ok(next)
@@ -80,6 +88,7 @@ pub async fn reset_settings(app: AppHandle) -> Result<Settings> {
     let next = app.state::<SettingsStore>().reset()?;
 
     apply_reset_side_effects(&app, &next);
+    window::effects::apply_all(&app);
     emit_settings_updated(&app, &next);
 
     Ok(next)

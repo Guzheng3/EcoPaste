@@ -219,6 +219,15 @@
             "light": "浅色"
           },
           "title": "主题"
+        },
+        "windowEffect": {
+          "description": "为剪贴板窗口与预览浮窗应用系统毛玻璃材质；云母仅 Windows 11 支持，macOS 两种均为毛玻璃。",
+          "options": {
+            "acrylic": "亚克力",
+            "mica": "云母",
+            "none": "关闭"
+          },
+          "title": "窗口效果"
         }
       },
       "backup": {
@@ -524,6 +533,10 @@
         "redactSecrets": {
           "description": "对已收录的敏感内容保留头尾字符，中间用 * 显示。",
           "title": "脱敏显示"
+        },
+        "sensitiveTtlHours": {
+          "description": "未收藏的敏感内容在保存多久后自动清除。设为 0 表示不自动清除；手动收藏的内容不会过期。",
+          "title": "自动清除有效期（小时）"
         }
       },
       "shortcuts": {

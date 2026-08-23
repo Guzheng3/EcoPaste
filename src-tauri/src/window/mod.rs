@@ -1,3 +1,4 @@
+pub mod effects;
 pub mod lifecycle;
 pub(super) mod position;
 pub mod preview;

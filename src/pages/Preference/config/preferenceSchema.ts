@@ -148,6 +148,15 @@ export const preferenceTabs: PreferenceTab[] = [
               return settings.clipboard.sensitive.redactSecrets;
             },
           },
+          {
+            control: { min: 0, suffixKey: "hours", type: "number" },
+            id: "sensitive.sensitiveTtlHours",
+            keywords: ["sensitive", "expiry", "ttl", "auto", "clear"],
+            path: ["clipboard", "sensitive", "sensitiveTtlHours"],
+            value: (settings) => {
+              return settings.clipboard.sensitive.sensitiveTtlHours;
+            },
+          },
         ],
       },
     ],
@@ -541,6 +550,30 @@ export const preferenceTabs: PreferenceTab[] = [
             path: ["appearance", "theme"],
             value: (settings) => {
               return settings.appearance.theme;
+            },
+          },
+          {
+            control: {
+              options: [
+                { value: "none" },
+                { value: "mica" },
+                { value: "acrylic" },
+              ],
+              type: "segmented",
+            },
+            id: "appearance.windowEffect",
+            keywords: [
+              "window",
+              "effect",
+              "mica",
+              "acrylic",
+              "vibrancy",
+              "blur",
+              "glass",
+            ],
+            path: ["appearance", "windowEffect"],
+            value: (settings) => {
+              return settings.appearance.windowEffect;
             },
           },
           {

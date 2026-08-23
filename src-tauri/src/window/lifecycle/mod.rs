@@ -303,6 +303,9 @@ pub fn on_ready(app: &AppHandle, label: &str) {
         return;
     }
 
+    // 窗口 ready 时应用材质效果：覆盖启动预创建与按需重建（preview 空闲销毁后重建）两类场景。
+    crate::window::effects::apply_for_label(app, label);
+
     if let Some(manager) = manager(app) {
         let should_transition = manager.with_states(|states| {
             let entry = states

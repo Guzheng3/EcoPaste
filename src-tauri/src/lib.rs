@@ -259,6 +259,13 @@ pub fn run() {
                     api.prevent_close();
                 }
             }
+
+            // auto 主题跟随系统明暗切换时，同步重应用材质效果（Mica/Acrylic/Vibrancy 的色调
+            // 依赖明暗参数，不会随原生主题自动更新）。
+            if let WindowEvent::ThemeChanged(_) = event {
+                let label = window.label().to_owned();
+                window::effects::apply_for_label(window.app_handle(), &label);
+            }
         })
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

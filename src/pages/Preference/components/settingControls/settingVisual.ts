@@ -63,6 +63,7 @@ const SETTING_ICON_MAP: Record<string, string> = {
   "search.sort": "i-lucide:arrow-down-up",
   "sensitive.collectSecrets": "i-lucide:key-round",
   "sensitive.redactSecrets": "i-lucide:scan-eye",
+  "sensitive.sensitiveTtlHours": "i-lucide:timer",
   "shortcuts.openClipboard": "i-lucide:clipboard",
   "shortcuts.openPreference": "i-lucide:settings",
   "shortcuts.winV": "i-lucide:clipboard-list",

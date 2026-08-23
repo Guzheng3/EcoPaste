@@ -214,6 +214,7 @@ mod tests {
             is_favorite: false,
             is_pinned: false,
             is_sensitive: false,
+            sensitive_expires_at: None,
             platform: Platform::Macos,
             note: None,
             created_at: ts,

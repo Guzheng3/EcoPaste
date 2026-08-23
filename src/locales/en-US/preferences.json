@@ -219,6 +219,15 @@
             "light": "Light"
           },
           "title": "Theme"
+        },
+        "windowEffect": {
+          "description": "Apply a system material effect to the clipboard and preview windows. Mica requires Windows 11; both options render as frosted glass on macOS.",
+          "options": {
+            "acrylic": "Acrylic",
+            "mica": "Mica",
+            "none": "Off"
+          },
+          "title": "Window effect"
         }
       },
       "backup": {
@@ -524,6 +533,10 @@
         "redactSecrets": {
           "description": "Show saved sensitive content with only the first and last characters visible, replacing the middle with *.",
           "title": "Redacted Display"
+        },
+        "sensitiveTtlHours": {
+          "description": "How long unsaved-sensitive content is kept before it is cleared automatically. Set to 0 to disable auto-clear; favorited content never expires.",
+          "title": "Auto-clear TTL (hours)"
         }
       },
       "shortcuts": {
