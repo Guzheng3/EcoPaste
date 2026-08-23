@@ -127,19 +127,43 @@ html.vibrancy-acrylic .os-scrollbar-handle {
   font-size: 13px;
 }
 
-/* 「复制成功」小气泡：实心绿色胶囊 + 白色对勾，不用毛玻璃，显眼直观。
-   独立透明窗（copied）渲染，样式不带 vibrancy 前缀。 */
+/* 「复制成功」小气泡：液态玻璃。与主窗口同一套双层结构——
+   Rust 侧给 copied 窗口挂系统亚克力（真实桌面模糊，见 window/copied.rs 的 ensure_window），
+   前端玻璃面占满整个窗口（168×44）：半透明 tint + 高光渐变 + backdrop-filter 叠加模糊 +
+   玻璃边框。内容（绿色对勾 + 文字）水平垂直完全居中。 */
 .copied-toast {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  justify-content: center;
   gap: 7px;
   padding: 8px 16px;
-  border-radius: 999px;
-  background: #16a34a;
-  box-shadow: 0 6px 20px rgba(22, 163, 74, 0.4);
-  color: #fff;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  background:
+    radial-gradient(140% 120% at 0% 0%, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.04) 55%, transparent 100%),
+    linear-gradient(160deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.06) 100%),
+    rgba(255, 255, 255, 0.3);
+  backdrop-filter: blur(var(--glass-blur, 18px)) saturate(var(--glass-saturate, 150%));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 18px)) saturate(var(--glass-saturate, 150%));
+  box-shadow:
+    0 6px 24px rgba(0, 0, 0, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  color: #1f2937;
   font-size: 13px;
   font-weight: 600;
   line-height: 1;
+  overflow: hidden;
   user-select: none;
+}
+
+html.dark .copied-toast {
+  border-color: rgba(255, 255, 255, 0.16);
+  background:
+    radial-gradient(140% 120% at 0% 0%, rgba(255, 255, 255, 0.06) 0%, transparent 55%),
+    linear-gradient(160deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%),
+    rgba(22, 22, 26, 0.35);
+  box-shadow:
+    0 6px 24px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  color: #f3f4f6;
 }

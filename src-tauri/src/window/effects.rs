@@ -16,13 +16,19 @@ use tauri::{AppHandle, Manager, Theme, WebviewWindow};
 
 use crate::settings::{opacity_to_alpha, SettingsStore, WindowEffect};
 
-use super::{CLIPBOARD_PREVIEW_WINDOW_LABEL, CLIPBOARD_WINDOW_LABEL};
+use super::{copied::COPIED_WINDOW_LABEL, CLIPBOARD_PREVIEW_WINDOW_LABEL, CLIPBOARD_WINDOW_LABEL};
 
 /// 参与材质效果的窗口：均为无边框透明悬浮窗。
 /// preference（带系统装饰的标准窗口）、onboarding（固定深色引导流程）、context-menu 系列
-/// （Windows 原生菜单替代）以及 `copied` 复制成功小气泡（自带胶囊样式，不参与）不参与，
-/// 避免装饰窗口与深色小菜单出现渲染怪异。
-const EFFECT_WINDOW_LABELS: [&str; 2] = [CLIPBOARD_WINDOW_LABEL, CLIPBOARD_PREVIEW_WINDOW_LABEL];
+/// （Windows 原生菜单替代）不参与，避免装饰窗口与深色小菜单出现渲染怪异。
+/// `copied` 复制成功小气泡与主窗口同一套双层玻璃（系统亚克力 + 前端玻璃面），
+/// 由 `copied::ensure_window` 建窗时主动挂载（不在 lifecycle descriptor 注册表内，
+/// 不走 on_ready handshake）。
+const EFFECT_WINDOW_LABELS: [&str; 3] = [
+    CLIPBOARD_WINDOW_LABEL,
+    CLIPBOARD_PREVIEW_WINDOW_LABEL,
+    COPIED_WINDOW_LABEL,
+];
 
 /// 按当前设置给所有受支持的窗口应用 / 清除材质效果。
 /// 单个窗口失败只记日志，不阻断其它窗口与设置流程。
