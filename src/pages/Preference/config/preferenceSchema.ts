@@ -553,59 +553,6 @@ export const preferenceTabs: PreferenceTab[] = [
           },
           {
             control: {
-              options: [{ value: "acrylic" }, { value: "none" }],
-              type: "segmented",
-            },
-            id: "appearance.windowEffect",
-            keywords: [
-              "window",
-              "effect",
-              "acrylic",
-              "vibrancy",
-              "blur",
-              "glass",
-            ],
-            path: ["appearance", "windowEffect"],
-            value: (settings) => {
-              return settings.appearance.windowEffect;
-            },
-          },
-          {
-            control: {
-              max: 100,
-              min: 0,
-              step: 5,
-              suffixKey: "percent",
-              type: "slider",
-            },
-            disabledWhen: (settings) =>
-              settings.appearance.windowEffect === "none",
-            id: "appearance.acrylicOpacity",
-            keywords: ["glass", "opacity", "transparency", "tint", "alpha"],
-            path: ["appearance", "acrylicOpacity"],
-            value: (settings) => {
-              return settings.appearance.acrylicOpacity;
-            },
-          },
-          {
-            control: {
-              max: 100,
-              min: 0,
-              step: 5,
-              suffixKey: "percent",
-              type: "slider",
-            },
-            disabledWhen: (settings) =>
-              settings.appearance.windowEffect === "none",
-            id: "appearance.acrylicBlur",
-            keywords: ["glass", "blur", "frosted", "depth"],
-            path: ["appearance", "acrylicBlur"],
-            value: (settings) => {
-              return settings.appearance.acrylicBlur;
-            },
-          },
-          {
-            control: {
               options: LANGUAGE_OPTIONS,
               type: "segmented",
             },

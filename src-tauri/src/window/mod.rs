@@ -1,5 +1,4 @@
 pub mod copied;
-pub mod effects;
 pub mod lifecycle;
 pub(super) mod position;
 pub mod preview;
@@ -205,43 +204,19 @@ pub fn position_window(app_handle: &AppHandle, label: &str, pos: WindowPosition)
 }
 
 /// 剪贴板窗口显示前应用窗口定位策略。
-/// 先恢复持久化几何（含用户手动拖拽缩放后的尺寸与位置）；**仅在无存档（首次）时**才按
-/// 设置目标尺寸（缩放 + 长宽比，默认 360×600）做分辨率/DPI 自适应——一旦用户拖拽过，
-/// 之后每次打开都尊重持久化尺寸，不再用固定比例强制覆盖。非 Remember 策略再由
-/// `position_window` 覆盖位置。平台 `show_window` 需要在主线程闭包里调用，避免
-/// set_position 与 show 异步交错产生闪烁。
+/// 始终先调用 `restore_window_state` 恢复尺寸与合法位置（含越界 fallback）；
+/// 非 Remember 策略再由 `position_window` 覆盖位置。
+/// 平台 `show_window` 需要在主线程闭包里调用，避免 set_position 与 show 异步交错产生闪烁。
 fn apply_clipboard_window_layout(app_handle: &AppHandle) -> Result<()> {
-    let restored = state::restore_window_state(app_handle, CLIPBOARD_WINDOW_LABEL)?;
-
     let Some(store) = app_handle.try_state::<SettingsStore>() else {
         return Ok(());
     };
     let snap = store.snapshot();
-    let window_settings = &snap.clipboard.window;
+    let position = snap.clipboard.window.position;
 
-    // 尺寸自适应仅用于首次打开（无持久化存档）：设置的目标尺寸（缩放 + 长宽比，
-    // 默认 360×600），按光标所在屏缩放适配。
-    if !restored {
-        if let Ok(window) = get_window(app_handle, CLIPBOARD_WINDOW_LABEL) {
-            if let Err(err) = position::fit_default_size(
-                &window,
-                window_settings.scale_percent,
-                window_settings.aspect_ratio,
-            ) {
-                log::warn!("fit clipboard window size failed: {err}");
-            }
-        }
-    }
-
-    let position = window_settings.position;
+    let _ = state::restore_window_state(app_handle, CLIPBOARD_WINDOW_LABEL)?;
 
     if matches!(position, WindowPosition::Remember) {
-        // 自适应使窗口可能比旧持久化尺寸更大，越界时回落到当前屏中心。
-        if let Ok(window) = get_window(app_handle, CLIPBOARD_WINDOW_LABEL) {
-            if let Err(err) = position::recenter_if_out_of_bounds(&window) {
-                log::warn!("recenter clipboard window failed: {err}");
-            }
-        }
         return Ok(());
     }
 
@@ -257,27 +232,6 @@ pub fn save_all_window_states(app_handle: &AppHandle) {
             log::warn!("save window state on exit failed for {label}: {err}");
         }
     }
-}
-
-/// 剪贴板窗口 resize 防抖落盘调度标记：`Resized` 事件在拖拽期间高频触发，
-/// 只调度一次延迟保存，避免每帧写盘。最终尺寸在 hide / close / exit 仍会保存。
-static CLIPBOARD_RESIZE_SAVE_SCHEDULED: AtomicBool = AtomicBool::new(false);
-
-/// 剪贴板窗口尺寸变化后延迟落盘，确保拖拽结束后立即记录最终尺寸（需求：持久保存调整后的窗口尺寸）。
-/// 连续 resize 只会触发一次实际保存；保存后再有新尺寸变化会重新调度。
-pub fn schedule_save_clipboard_window_state(app_handle: &AppHandle) {
-    if CLIPBOARD_RESIZE_SAVE_SCHEDULED.swap(true, Ordering::SeqCst) {
-        return;
-    }
-
-    let app = app_handle.clone();
-    tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
-        CLIPBOARD_RESIZE_SAVE_SCHEDULED.store(false, Ordering::SeqCst);
-        if let Err(err) = state::save_window_state(&app, CLIPBOARD_WINDOW_LABEL) {
-            log::warn!("save clipboard window state after resize failed: {err}");
-        }
-    });
 }
 
 /// 处理窗口关闭请求，让应用常驻后台（系统托盘）。

@@ -78,12 +78,6 @@ pub enum OnboardingLegacyImportType {
 pub struct Appearance {
     pub theme: Theme,
     pub language: Language,
-    pub window_effect: WindowEffect,
-    /// 毛玻璃透光度（0 = 完全不透明、100 = 完全透明）。值越低玻璃后面越实、越高越透。
-    /// 同时影响系统亚克力的 tint alpha 和前端 antd 容器背景的 alpha。
-    pub acrylic_opacity: u8,
-    /// 毛玻璃模糊度（0 = 不模糊、100 = 强烈模糊）。影响前端 `backdrop-filter: blur()`。
-    pub acrylic_blur: u8,
 }
 
 impl Default for Appearance {
@@ -91,23 +85,8 @@ impl Default for Appearance {
         Self {
             theme: Theme::Auto,
             language: Language::ZhCN,
-            // 默认毛玻璃（Acrylic），完全复刻 TieZ 双层观感；云母已废弃。
-            window_effect: WindowEffect::Acrylic,
-            // 默认透光度 50（半透），与 TieZ 观感保持一致。
-            acrylic_opacity: 50,
-            // 默认模糊度 50（中度模糊）。
-            acrylic_blur: 50,
         }
     }
-}
-
-/// 把 0-100 的透光度值转换为 0-255 的 alpha 通道。
-/// `100` 完全透明 = alpha 0；`0` 完全不透明 = alpha 255。
-#[inline]
-pub fn opacity_to_alpha(opacity: u8) -> u8 {
-    let clamped = opacity.min(100);
-    // 反向：透光度 100 → alpha 0；透光度 0 → alpha 255
-    ((100u16 - u16::from(clamped)) * 255 / 100) as u8
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -117,22 +96,6 @@ pub enum Theme {
     Auto,
     Light,
     Dark,
-}
-
-/// 窗口材质效果（毛玻璃 / 亚克力）。
-///
-/// - Windows：`Acrylic` 走 `SetWindowCompositionAttribute`，Win10 1803+ 与 Win11 均可用。
-/// - macOS：`Acrylic` 映射为 NSVisualEffectView 毛玻璃。
-/// - `None`：普通不透明窗口背景。
-///
-/// 旧配置里的 `mica` 作为 `Acrylic` 的别名被容错解析（云母已废弃，统一走毛玻璃）。
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum WindowEffect {
-    #[default]
-    None,
-    #[serde(alias = "mica")]
-    Acrylic,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -628,10 +591,6 @@ pub struct Window {
     pub lightweight_mode: bool,
     /// 非剪贴板窗口隐藏后释放 WebView 的空闲秒数。
     pub idle_destroy_seconds: u32,
-    /// 剪贴板窗口缩放百分比（50-200）。作用于基准高度 600，宽度由长宽比换算。
-    pub scale_percent: u8,
-    /// 剪贴板窗口长宽比（宽:高）。默认 3:5（缩放 100% 时即 360×600）。
-    pub aspect_ratio: WindowAspectRatio,
 }
 
 impl Default for Window {
@@ -644,40 +603,6 @@ impl Default for Window {
             select_group_on_open: WINDOW_OPEN_SELECTION_PRESERVE.to_owned(),
             lightweight_mode: true,
             idle_destroy_seconds: 60,
-            scale_percent: 100,
-            aspect_ratio: WindowAspectRatio::default(),
-        }
-    }
-}
-
-/// 剪贴板窗口长宽比（宽:高）。宽度 = 高度 × 比例。
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub enum WindowAspectRatio {
-    #[serde(rename = "3:5")]
-    #[default]
-    Ratio3x5,
-    #[serde(rename = "2:3")]
-    Ratio2x3,
-    #[serde(rename = "1:1")]
-    Ratio1x1,
-    #[serde(rename = "4:5")]
-    Ratio4x5,
-    #[serde(rename = "3:4")]
-    Ratio3x4,
-    #[serde(rename = "9:16")]
-    Ratio9x16,
-}
-
-impl WindowAspectRatio {
-    /// 宽 / 高。
-    pub fn width_over_height(self) -> f64 {
-        match self {
-            Self::Ratio3x5 => 3.0 / 5.0,
-            Self::Ratio2x3 => 2.0 / 3.0,
-            Self::Ratio1x1 => 1.0,
-            Self::Ratio4x5 => 4.0 / 5.0,
-            Self::Ratio3x4 => 3.0 / 4.0,
-            Self::Ratio9x16 => 9.0 / 16.0,
         }
     }
 }

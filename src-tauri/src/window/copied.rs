@@ -10,7 +10,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
 
 use crate::core::{AppError, Result};
-use crate::window::{effects, lifecycle};
+use crate::window::lifecycle;
 
 pub const COPIED_WINDOW_LABEL: &str = "copied";
 
@@ -23,8 +23,6 @@ const SCREEN_BOTTOM_MARGIN: f64 = 56.0;
 const HIDE_AFTER: Duration = Duration::from_millis(1500);
 
 /// 按需建窗。窗口保持 `visible: false`，由 [`show`] 统一 show + 定位；重复调用复用已存在窗口。
-/// 建窗后立即挂载亚克力材质：气泡是液态玻璃底（真实桌面模糊 + 前端玻璃面），
-/// copied 窗口不在 lifecycle descriptor 注册表内，不走 on_ready handshake，故在此主动挂载。
 fn ensure_window(app: &AppHandle) -> Result<()> {
     if app.get_webview_window(COPIED_WINDOW_LABEL).is_some() {
         return Ok(());
@@ -48,8 +46,6 @@ fn ensure_window(app: &AppHandle) -> Result<()> {
     .drag_and_drop(false)
     .build()
     .map_err(|err| AppError::Other(anyhow::anyhow!("build copied window: {err}")))?;
-
-    effects::apply_for_label(app, COPIED_WINDOW_LABEL);
 
     Ok(())
 }

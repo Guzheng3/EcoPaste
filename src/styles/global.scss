@@ -18,86 +18,10 @@ html {
   }
 }
 
-/**
- * 毛玻璃（Acrylic）—— 复刻 TieZ（tiez-clipboard）的双层观感：
- *
- * 1. Rust 侧 window-vibrancy 挂载系统亚克力材质（真实桌面模糊），见
- *    `src-tauri/src/window/effects.rs`；
- * 2. 前端把窗口根壳（#root）做成玻璃面：圆角玻璃边框 + backdrop-filter 模糊下方
- *    渐变层 + 高光渐变层。
- *
- * 玻璃面的半透明底色（antd colorBgContainer / colorBgLayout）由 `useAppTheme` 通过
- * `theme.token` 注入——antd v6 的组件级 CSS 变量（`.css-var-xxx`）会遮蔽 html 级
- * `--ant-*` 覆盖，在样式表里覆盖变量是无效的。
- *
- * 模糊度（`--glass-blur`）由 `App.tsx` 监听设置变化实时写入 `<html style>`。
- * 本选择器组仅在挂了系统材质的窗口生效（App.tsx 只对 clipboard / preview 加
- * `vibrancy-acrylic` 类），右键菜单等独立窗口保持实色背景。
- */
-:root {
-  --glass-blur: 18px;
-  --glass-saturate: 150%;
-  --glass-highlight: 0.1;
-  --glass-highlight-2: 0.06;
-}
-
-html.vibrancy-acrylic body {
-  background-color: transparent;
-}
-
-/* 窗口根壳：圆角玻璃边框 + 背景模糊 + 高光渐变层。 */
-html.vibrancy-acrylic #root {
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.32);
-  box-shadow: 0 10px 38px rgba(0, 0, 0, 0.16);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-}
-
-html.vibrancy-acrylic #root::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  border-radius: inherit;
-  background:
-    radial-gradient(140% 110% at 0% 0%, rgba(255, 255, 255, var(--glass-highlight)) 0%, rgba(255, 255, 255, 0.02) 60%, transparent 100%),
-    linear-gradient(145deg, rgba(255, 255, 255, var(--glass-highlight-2)) 0%, rgba(255, 255, 255, 0.01) 100%);
-}
-
-html.vibrancy-acrylic #root > * {
-  position: relative;
-  z-index: 1;
-}
-
-/* 淡渐变底面：供 #root 的 backdrop-filter 模糊出玻璃层次。刻意保持极淡，
-   真实模糊来自系统亚克力，层叠过厚会"看不见毛玻璃"。 */
-html.vibrancy-acrylic:not(.dark) body {
-  background:
-    radial-gradient(120% 120% at 8% 8%, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.04) 52%, rgba(255, 255, 255, 0.01) 100%),
-    linear-gradient(160deg, rgba(170, 190, 220, 0.06) 0%, rgba(210, 220, 236, 0.03) 45%, rgba(180, 195, 215, 0.05) 100%);
-}
-
-html.vibrancy-acrylic.dark body {
-  background:
-    radial-gradient(120% 120% at 10% 8%, rgba(120, 138, 164, 0.08) 0%, rgba(74, 86, 108, 0.03) 48%, rgba(48, 56, 72, 0.07) 100%),
-    linear-gradient(150deg, rgba(255, 255, 255, 0.01) 0%, rgba(255, 255, 255, 0.03) 100%);
-}
-
-html.vibrancy-acrylic.dark #root {
-  border-color: rgba(255, 255, 255, 0.12);
-  box-shadow: 0 10px 38px rgba(0, 0, 0, 0.32);
-}
-
-/* 全局彻底隐藏滚动条 UI（剪贴板主列表 / 快捷键面板 / 偏好设置列表 / 搜索结果等所有
-   OverlayScrollbars 容器），右侧不再出现任何竖条/滑块；仅保留鼠标滚轮 / 触摸滚动。
-   OverlayScrollbars 的 `.os-scrollbar` 是它渲染的自定义轨道+把手，display:none 后
-   滚动功能（os-viewport）不受影响。 */
-.os-scrollbar {
-  display: none;
+.os-scrollbar-handle {
+  --os-handle-bg: var(--ant-color-text-quaternary);
+  --os-handle-bg-hover: var(--ant-color-text-tertiary);
+  --os-handle-bg-active: var(--ant-color-text-secondary);
 }
 
 /* TieZ 风格搜索框：独立一行撑满两侧，加大高度与圆角（复刻 tiez-clipboard
@@ -111,45 +35,4 @@ html.vibrancy-acrylic.dark #root {
 
 .tiez-search.ant-input-affix-wrapper .ant-input {
   font-size: 13px;
-}
-
-/* 「复制成功」小气泡：液态玻璃。与主窗口同一套双层结构——
-   Rust 侧给 copied 窗口挂系统亚克力（真实桌面模糊，见 window/copied.rs 的 ensure_window），
-   前端玻璃面占满整个窗口（168×44）：半透明 tint + 高光渐变 + backdrop-filter 叠加模糊 +
-   玻璃边框。内容（绿色对勾 + 文字）水平垂直完全居中。 */
-.copied-toast {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  padding: 8px 16px;
-  border-radius: 22px;
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  background:
-    radial-gradient(140% 120% at 0% 0%, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.04) 55%, transparent 100%),
-    linear-gradient(160deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.06) 100%),
-    rgba(255, 255, 255, 0.3);
-  backdrop-filter: blur(var(--glass-blur, 18px)) saturate(var(--glass-saturate, 150%));
-  -webkit-backdrop-filter: blur(var(--glass-blur, 18px)) saturate(var(--glass-saturate, 150%));
-  box-shadow:
-    0 6px 24px rgba(0, 0, 0, 0.14),
-    inset 0 1px 0 rgba(255, 255, 255, 0.55);
-  color: #1f2937;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1;
-  overflow: hidden;
-  user-select: none;
-}
-
-html.dark .copied-toast {
-  border-color: rgba(255, 255, 255, 0.16);
-  background:
-    radial-gradient(140% 120% at 0% 0%, rgba(255, 255, 255, 0.06) 0%, transparent 55%),
-    linear-gradient(160deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%),
-    rgba(22, 22, 26, 0.35);
-  box-shadow:
-    0 6px 24px rgba(0, 0, 0, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  color: #f3f4f6;
 }

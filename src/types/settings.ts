@@ -17,9 +17,6 @@ import type {
 /** Rust enum `Theme`（`rename_all = "lowercase"`）。 */
 export type Theme = "auto" | "light" | "dark";
 
-/** Rust enum `WindowEffect`（`rename_all = "lowercase"`）；云母已废弃。 */
-export type WindowEffect = "none" | "acrylic";
-
 /** Rust enum `Language`（手动 `serde(rename)`）。 */
 export type Language = "zh-CN" | "en-US";
 
@@ -83,11 +80,6 @@ export interface General {
 export interface Appearance {
   theme: Theme;
   language: Language;
-  windowEffect: WindowEffect;
-  /** 毛玻璃透光度（0 = 完全不透明、100 = 完全透明）。后端通过 `appearance.acrylic_opacity` 镜像。 */
-  acrylicOpacity: number;
-  /** 毛玻璃模糊度（0 = 不模糊、100 = 强烈模糊）。后端通过 `appearance.acrylic_blur` 镜像。 */
-  acrylicBlur: number;
 }
 
 export interface Shortcuts {

@@ -24,40 +24,12 @@ const ANTD_MODAL_CONFIG = {
 } satisfies ConfigProviderProps["modal"];
 
 /**
- * 参与毛玻璃效果的窗口，与 Rust 侧 `effects.rs` 的 `EFFECT_WINDOW_LABELS` 保持一致。
- * 其它窗口（右键菜单、preference、onboarding、copied）没有系统亚克力底，
- * 套上玻璃壳会让半透明内容失去底色——右键菜单"看不见"的根因。
- */
-const EFFECT_WINDOW_LABELS: readonly string[] = [
-  WINDOW_LABEL.CLIPBOARD,
-  WINDOW_LABEL.PREVIEW,
-];
-
-/**
  * 把设置语言映射到 Ant Design 内置 locale。
  */
 const resolveAntdLocale = (language: Language) => {
   if (language === "en-US") return enUS;
 
   return zhCN;
-};
-
-/**
- * 与 Rust `opacity_to_alpha` 的反向关系：透光度 0 → alpha 1（实色），透光度 100 → alpha 0（完全透明）。
- */
-const resolveTintAlpha = (opacity: number) => {
-  const clamped = Math.max(0, Math.min(100, opacity));
-
-  return (100 - clamped) / 100;
-};
-
-/**
- * 把 0-100 的模糊度映射到 `backdrop-filter: blur(<px>)` 的像素值。
- * 0 = 不模糊（0px），100 = 强烈模糊（48px），与 TieZ 视觉量级一致。
- */
-const resolveBlurPx = (blur: number) => {
-  const clamped = Math.max(0, Math.min(100, blur));
-  return Math.round((clamped / 100) * 48);
 };
 
 const AppContent: FC = () => {
@@ -86,35 +58,8 @@ const App: FC = () => {
       ? "dark"
       : settings.appearance.theme;
   const language = settings.appearance.language;
-  const windowEffect = settings.appearance.windowEffect;
-  const acrylicOpacity = settings.appearance.acrylicOpacity;
-  const acrylicBlur = settings.appearance.acrylicBlur;
-  const isEffectWindow = EFFECT_WINDOW_LABELS.includes(windowLabel);
-  const glassActive = isEffectWindow && windowEffect !== "none";
-  const antdTheme = useAppTheme(mode, {
-    enabled: glassActive,
-    tintAlpha: resolveTintAlpha(acrylicOpacity),
-  });
+  const antdTheme = useAppTheme(mode);
   const locale = resolveAntdLocale(language);
-
-  // 窗口毛玻璃材质：挂到 html 上供 global.scss 复刻 TieZ 玻璃壳（圆角 + 边框 + backdrop-filter），
-  // 透出 Rust 侧挂载的系统亚克力材质。仅对 EFFECT_WINDOW_LABELS 里的窗口生效。
-  useEffect(() => {
-    const root = document.documentElement;
-
-    root.classList.toggle("vibrancy", glassActive);
-    root.classList.toggle(
-      "vibrancy-acrylic",
-      glassActive && windowEffect === "acrylic",
-    );
-  }, [glassActive, windowEffect]);
-
-  // 毛玻璃模糊度：把设置项映射到 CSS 变量，slider 拖动时实时刷新。
-  // 透光度走 useAppTheme 的 theme.token（antd v6 组件级 CSS 变量会遮蔽 html 级覆盖）。
-  useEffect(() => {
-    const root = document.documentElement;
-    root.style.setProperty("--glass-blur", `${resolveBlurPx(acrylicBlur)}px`);
-  }, [acrylicBlur]);
 
   useEffect(() => {
     document.documentElement.lang = language;

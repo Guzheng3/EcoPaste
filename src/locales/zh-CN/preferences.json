@@ -188,14 +188,6 @@
         }
       },
       "appearance": {
-        "acrylicBlur": {
-          "description": "玻璃后面背景的模糊程度。值越大越柔和、越能突出前景内容。",
-          "title": "模糊度"
-        },
-        "acrylicOpacity": {
-          "description": "玻璃后面桌面内容透出的程度。值越大越能看清背景；值越小玻璃后面越实。",
-          "title": "透光度"
-        },
         "fileMaxCount": {
           "description": "限制文件记录在列表卡片中最多显示的文件数量。",
           "title": "文件最多显示数量"
@@ -228,14 +220,6 @@
             "light": "浅色"
           },
           "title": "主题"
-        },
-        "windowEffect": {
-          "description": "为剪贴板窗口与预览浮窗应用系统毛玻璃材质。",
-          "options": {
-            "acrylic": "毛玻璃",
-            "none": "关闭"
-          },
-          "title": "窗口效果"
         }
       },
       "backup": {

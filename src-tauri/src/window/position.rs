@@ -1,24 +1,11 @@
 use tauri::{PhysicalPosition, PhysicalSize, WebviewWindow};
 
 use crate::core::Result;
-use crate::settings::{WindowAspectRatio, WindowPosition};
-
-/// 剪贴板窗口的基准尺寸（逻辑像素，即 CSS 像素）：基准高度 600，宽度由长宽比换算
-/// （默认 3:5 → 360×600，与 tauri.conf.json 保持一致）。运行时按设置缩放 +
-/// 所在屏分辨率 + DPI 自适应，见 [`fit_default_size`]。
-pub(super) const DEFAULT_WINDOW_HEIGHT: f64 = 600.0;
-/// 缩放百分比下限 / 上限。
-pub(super) const MIN_SCALE_PERCENT: u8 = 50;
-pub(super) const MAX_SCALE_PERCENT: u8 = 200;
-
-/// 自动缩放的屏幕留白（逻辑像素），避免体积紧贴工作区边缘。
-const FIT_MARGIN: f64 = 12.0;
+use crate::settings::WindowPosition;
 
 struct MonitorInfo {
     position: PhysicalPosition<i32>,
     size: PhysicalSize<u32>,
-    /// 工作区大小（已扣除任务栏 / 刘海遮挡），用于自适应缩放。
-    work_size: PhysicalSize<u32>,
 }
 
 fn monitor_from_cursor(
@@ -41,77 +28,9 @@ fn monitor_from_cursor(
         MonitorInfo {
             position: *monitor.position(),
             size: *monitor.size(),
-            work_size: monitor.work_area().size,
         },
         cursor,
     )))
-}
-
-/// 剪贴板窗口尺寸自适应：按设置的目标尺寸（基准高度 600 × 缩放百分比，宽度 = 高度 ×
-/// 长宽比；默认 3:5、100% 即 360×600 逻辑像素）打开，超出光标所在屏工作区时等比缩小，
-/// 保证完整落在可用区域内（每边留 FIT_MARGIN）。
-///
-/// 关键：`work_size` 与 `position` 是**物理像素**，必须先除以 `scale_factor` 换算到逻辑像素，
-/// 再与设计值比较。直接拿物理工作区除设计值会被 `clamp(0.01, 1.0)` 钳到 1.0，再乘上 `scale`
-/// 就把设计值又放大一遍（典型 DPI 1.5 上 360×600 会变成 540×900），看起来像窗口没缩放。
-pub fn fit_default_size(
-    window: &WebviewWindow,
-    scale_percent: u8,
-    aspect_ratio: WindowAspectRatio,
-) -> Result<()> {
-    let Some((monitor, _)) = monitor_from_cursor(window)? else {
-        return Ok(());
-    };
-
-    let scale = window.scale_factor().map_err(|e| anyhow::anyhow!(e))?;
-
-    // 目标尺寸：高度 = 基准 600 × 缩放；宽度 = 高度 × 长宽比。
-    let zoom = (scale_percent.clamp(MIN_SCALE_PERCENT, MAX_SCALE_PERCENT)) as f64 / 100.0;
-    let design_h = DEFAULT_WINDOW_HEIGHT * zoom;
-    let design_w = design_h * aspect_ratio.width_over_height();
-
-    // 工作区换算为逻辑像素（CSS 像素），减去两侧留白。
-    let avail_w = monitor.work_size.width as f64 / scale - FIT_MARGIN * 2.0;
-    let avail_h = monitor.work_size.height as f64 / scale - FIT_MARGIN * 2.0;
-
-    let ratio = (avail_w / design_w)
-        .min(avail_h / design_h)
-        .clamp(0.01, 1.0);
-
-    // 逻辑尺寸就是设计尺寸 × ratio；物理尺寸 = 逻辑 × scale（写入 Tauri 必须用物理像素）。
-    let logical_w = design_w * ratio;
-    let logical_h = design_h * ratio;
-    let physical_w = (logical_w * scale).round().max(1.0) as u32;
-    let physical_h = (logical_h * scale).round().max(1.0) as u32;
-
-    window
-        .set_size(PhysicalSize::new(physical_w, physical_h))
-        .map_err(|e| anyhow::anyhow!(e))?;
-
-    Ok(())
-}
-
-/// `Remember` 定位时，若自适应缩放后的窗口底部/右侧超出当前屏工作区（比旧尺寸更大时可能发生），
-/// 回落到该屏中心，避免窗口跑到屏幕外。
-pub fn recenter_if_out_of_bounds(window: &WebviewWindow) -> Result<()> {
-    let Some((monitor, _)) = monitor_from_cursor(window)? else {
-        return Ok(());
-    };
-
-    let scale = window.scale_factor().map_err(|e| anyhow::anyhow!(e))?;
-    let pos = window.outer_position().map_err(|e| anyhow::anyhow!(e))?;
-    let size = window.inner_size().map_err(|e| anyhow::anyhow!(e))?;
-
-    let right = pos.x as f64 + size.width as f64 / scale;
-    let bottom = pos.y as f64 + size.height as f64 / scale;
-    let work_w = monitor.work_size.width as f64 / scale;
-    let work_h = monitor.work_size.height as f64 / scale;
-
-    if pos.x < 0 || pos.y < 0 || right > work_w || bottom > work_h {
-        center_on_cursor_monitor(window)?;
-    }
-
-    Ok(())
 }
 
 pub fn position_window(window: &WebviewWindow, position: WindowPosition) -> Result<()> {
