@@ -91,3 +91,31 @@ fn apply_center(window: &WebviewWindow, monitor: &MonitorInfo) -> Result<()> {
         .map_err(|e| anyhow::anyhow!(e))?;
     Ok(())
 }
+
+/// 把窗口整体夹回光标所在屏幕的边界内（含负坐标显示器，如扩展屏在左侧）。
+/// 用于剪贴板窗口「首次出现」时避免落到屏外；后续用户手动拖动不受本函数限制。
+pub(super) fn clamp_within_screen(window: &WebviewWindow) -> Result<()> {
+    let Some((monitor, _)) = monitor_from_cursor(window)? else {
+        return Ok(());
+    };
+
+    let pos = window.outer_position().map_err(|e| anyhow::anyhow!(e))?;
+    let size = window.outer_size().map_err(|e| anyhow::anyhow!(e))?;
+
+    let min_x = monitor.position.x;
+    let min_y = monitor.position.y;
+    let max_x = (min_x + monitor.size.width as i32 - size.width as i32).max(min_x);
+    let max_y = (min_y + monitor.size.height as i32 - size.height as i32).max(min_y);
+
+    let next_x = pos.x.clamp(min_x, max_x);
+    let next_y = pos.y.clamp(min_y, max_y);
+
+    if next_x == pos.x && next_y == pos.y {
+        return Ok(());
+    }
+
+    window
+        .set_position(PhysicalPosition::new(next_x, next_y))
+        .map_err(|e| anyhow::anyhow!(e))?;
+    Ok(())
+}

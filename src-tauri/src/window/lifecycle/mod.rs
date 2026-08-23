@@ -14,6 +14,7 @@ mod descriptor;
 pub use descriptor::{descriptor_for, descriptors, RetainPolicy};
 
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -21,6 +22,9 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::settings::SettingsStore;
+
+/// 剪贴板窗口是否已完成首次显示（用于一次性边界夹取；进程内有效，重启重置）。
+static CLIPBOARD_FIRST_SHOWN: AtomicBool = AtomicBool::new(false);
 
 /// 非剪贴板窗口隐藏空闲超过此时长后销毁 WebView。
 pub const DEFAULT_IDLE_DESTROY_SECS: u64 = 60;
@@ -287,6 +291,19 @@ fn manager(app: &AppHandle) -> Option<tauri::State<'_, WindowLifecycleManager>> 
 pub fn on_shown(app: &AppHandle, label: &str) {
     if let Some(manager) = manager(app) {
         manager.transition(app, label, LifecyclePhase::Visible, "show");
+    }
+
+    // 剪贴板窗口「首次出现」时把整个窗口夹回屏幕边界内，避免落到屏外；
+    // 只执行一次，后续用户手动拖动不受限制。
+    #[cfg(not(target_os = "macos"))]
+    if label == super::CLIPBOARD_WINDOW_LABEL
+        && !CLIPBOARD_FIRST_SHOWN.swap(true, Ordering::Relaxed)
+    {
+        if let Ok(window) = super::get_window(app, super::CLIPBOARD_WINDOW_LABEL) {
+            if let Err(err) = super::position::clamp_within_screen(&window) {
+                log::warn!("clamp clipboard window to screen failed: {err}");
+            }
+        }
     }
 
     // 剪贴板窗口首次显示后预热右键菜单窗口，让首次右键不再现场建窗卡顿。
