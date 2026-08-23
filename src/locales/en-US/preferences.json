@@ -219,6 +219,14 @@
             "light": "Light"
           },
           "title": "Theme"
+        },
+        "windowEffect": {
+          "description": "Apply a frosted glass material effect to the clipboard and preview windows.",
+          "options": {
+            "acrylic": "Acrylic",
+            "none": "Off"
+          },
+          "title": "Window effect"
         }
       },
       "backup": {
@@ -245,10 +253,6 @@
         "image": {
           "description": "When off, clipboard images are not saved to history.",
           "title": "Image"
-        },
-        "maxImageMb": {
-          "description": "Images larger than this are not saved to history. Set to 0 for no limit.",
-          "title": "Maximum Image Capture Size"
         },
         "maxTextMb": {
           "description": "Text, HTML, or RTF larger than this is not saved to history. Set to 0 for no limit.",
@@ -312,6 +316,10 @@
         }
       },
       "copy": {
+        "extractEntities": {
+          "description": "Auto-extract links, email addresses, phone numbers and QQ IDs from text records and show them in a dropdown, with one-click open or fill.",
+          "title": "Auto-extract Entities"
+        },
         "hideWindow": {
           "description": "After copying a history record, automatically hide the clipboard window.",
           "title": "Hide Window After Copy"
@@ -321,9 +329,8 @@
           "title": "Copy as Plain Text by Default"
         },
         "sound": {
-          "description": "Play a sound when new clipboard content is saved to history.",
-          "preview": "Preview sound",
-          "title": "Copy Sound"
+          "description": "Show a small toast in the lower right when new clipboard content is saved to history; re-copying the same content does not repeat the toast.",
+          "title": "Copy Succeeded Toast"
         },
         "updateOnReuse": {
           "description": "Refresh use time and usage count when copying or pasting a history record.",
@@ -384,10 +391,6 @@
         }
       },
       "history": {
-        "cleanupIntervalHours": {
-          "description": "Check and clean history every specified number of hours. 0 disables periodic cleanup; startup cleanup still runs once.",
-          "title": "Auto Cleanup Interval"
-        },
         "maxCount": {
           "description": "When the limit is exceeded, older regular records are cleaned automatically; favorites and pinned items are always kept. 0 means unlimited items.",
           "title": "Maximum Items"
@@ -524,6 +527,10 @@
         "redactSecrets": {
           "description": "Show saved sensitive content with only the first and last characters visible, replacing the middle with *.",
           "title": "Redacted Display"
+        },
+        "sensitiveTtlHours": {
+          "description": "How long unsaved-sensitive content is kept before it is cleared automatically. Set to 0 to disable auto-clear; favorited content never expires.",
+          "title": "Auto-clear TTL (hours)"
         }
       },
       "shortcuts": {

@@ -5,19 +5,21 @@ use std::path::Path;
 use std::sync::Arc;
 
 use chrono::{DateTime, Datelike, Local, Utc};
+use clipboard_rs::{Clipboard, ClipboardContext};
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::clipboard::{
-    add_app_from_path, build_item_with_settings, delete_unreferenced_apps, detect_frontmost,
-    materialize_source, persist_and_notify, refresh_running_apps, sanitize_css_color, AppIconStore,
-    AppsRegistry, ClipboardReader, FileIconStore, ImageStore, WritebackGuard,
+    add_app_from_path, build_item_with_source, delete_unreferenced_apps, detect_frontmost,
+    extract_entities, materialize_source, persist_and_notify, refresh_running_apps,
+    sanitize_css_color, segment_text, AppIconStore, AppsRegistry, ClipboardReader, ExtractedEntity,
+    FileIconStore, ImageStore, WritebackGuard,
 };
 use crate::core::{AppError, Result};
 use crate::db::items::{
-    clear_items, find_item_by_id, find_item_for_list_by_id, increment_item_use_count,
+    clear_items, content_hash, find_item_by_id, find_item_for_list_by_id, increment_item_use_count,
 };
 use crate::db::models::{
     ClipboardAction, ClipboardApp, ClipboardGroup, ClipboardItem, ClipboardItemPage,
@@ -90,12 +92,13 @@ pub async fn read_clipboard(
         let settings = app.state::<SettingsStore>().snapshot();
         let payload = reader.read_with_capture(&settings.clipboard.capture)?;
         let item = match payload {
-            Some(payload) => build_item_with_settings(
+            Some(payload) => build_item_with_source(
                 &store,
                 &payload,
                 &settings.clipboard.capture,
                 &settings.clipboard.sensitive,
                 settings.clipboard.content.copy_plain,
+                source.as_ref().map(|s| s.name.as_str()),
             )?,
             None => None,
         };
@@ -351,12 +354,6 @@ pub async fn get_clipboard_preview_payload(
     Ok(Some(payload))
 }
 
-/// 播放一次复制成功提示音，用于偏好设置页试听。
-#[tauri::command]
-pub async fn play_copy_sound() {
-    crate::clipboard::play_copy_sound();
-}
-
 /// 把指定历史记录写回系统剪贴板（不触发模拟粘贴）。
 /// `plain = true` 强制纯文本，剥离 HTML/RTF。
 ///
@@ -453,6 +450,85 @@ pub async fn paste_clipboard_item(
     }
 
     Ok(())
+}
+
+/// 拆词（前端「拆词填入」入口）：按 id 读一条文本记录，分词返回有序词块。
+/// 非文本记录直接返回空数组。分词规则见 `crate::clipboard::segment`。
+#[tauri::command]
+pub async fn segment_clipboard_item(
+    db: State<'_, DatabaseState>,
+    id: String,
+) -> Result<Vec<String>> {
+    let pool = db.pool().await;
+    let item = find_item_by_id(&pool, &id)
+        .await?
+        .ok_or_else(|| AppError::Clipboard(format!("clipboard item not found: {id}")))?;
+
+    if item.kind != ClipboardKind::Text {
+        return Ok(Vec::new());
+    }
+
+    // 纯文本表示优先（HTML/RTF 记录也能拿到 OS 侧 plain 文本），兜底回退源 `content`。
+    let text = item.search_text.clone().unwrap_or(item.content);
+    Ok(segment_text(&text))
+}
+
+/// 实体提取（前端实体下拉框入口）：按 id 读一条文本记录，返回其中提取的链接 / 邮箱 / 手机号 / QQ。
+/// 非文本记录返回空数组。规则见 `crate::clipboard::entities`，已按出现顺序去重。
+#[tauri::command]
+pub async fn extract_item_entities(
+    db: State<'_, DatabaseState>,
+    id: String,
+) -> Result<Vec<ExtractedEntity>> {
+    let pool = db.pool().await;
+    let item = find_item_by_id(&pool, &id)
+        .await?
+        .ok_or_else(|| AppError::Clipboard(format!("clipboard item not found: {id}")))?;
+
+    if item.kind != ClipboardKind::Text {
+        return Ok(Vec::new());
+    }
+
+    let text = item.search_text.clone().unwrap_or(item.content);
+    Ok(extract_entities(&text))
+}
+
+/// 填入：把已选词块拼接文本写入系统剪贴板，隐藏剪贴板窗口后模拟 ⌘V / Ctrl+V 键入前台输入框。
+/// 与 `paste_clipboard_item` 复用同一套「写回 + 抑制回环 + 粘贴」时序。
+#[tauri::command]
+pub async fn fill_selected_text(
+    app: AppHandle,
+    guard: State<'_, Arc<WritebackGuard>>,
+    text: String,
+) -> Result<()> {
+    let text = text.trim().to_owned();
+    if text.is_empty() {
+        return Ok(());
+    }
+
+    // 写系统剪贴板并用 guard 抑制回环，避免 watcher 把本次填入误判为新内容再入一条。
+    let ctx = ClipboardContext::new().map_err(clip_err)?;
+    guard.suppress(content_hash(ClipboardKind::Text, &text));
+    ctx.set_text(text).map_err(clip_err)?;
+
+    // 固定窗口时保持可见（与 paste 一致，不强行隐藏）；否则隐藏后让键焦点回前台再模拟粘贴。
+    if window::is_clipboard_window_pinned() {
+        return Ok(());
+    }
+    if let Err(err) = window::hide_window(&app, CLIPBOARD_WINDOW_LABEL) {
+        log::warn!("hide clipboard window before fill failed: {err:?}");
+    }
+
+    // hide 是 run_on_main_thread 异步派发；不等一拍，模拟的 ⌘V 会赶在 panel 让出键焦点前命中 panel 自己。
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    crate::keystroke::simulate_paste()?;
+
+    Ok(())
+}
+
+fn clip_err<E: std::fmt::Display>(err: E) -> AppError {
+    AppError::Clipboard(err.to_string())
 }
 
 /// 计算复制写回是否强制走纯文本；默认复制纯文本只作用于文本记录。
@@ -1567,6 +1643,7 @@ mod tests {
             is_favorite: false,
             is_pinned: false,
             is_sensitive,
+            sensitive_expires_at: None,
             platform: Platform::Macos,
             note: None,
             created_at: Utc::now(),

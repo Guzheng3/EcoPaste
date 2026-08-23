@@ -165,7 +165,14 @@ const ClipboardCard: FC<ClipboardCardProps> = (props) => {
             sourceAppIcon
           )}
 
-          <span className="truncate">{typeLabel}</span>
+          {sourceAppName ? (
+            <>
+              <span className="truncate">{sourceAppName}</span>
+              <span className="shrink-0 text-ant-quaternary">{typeLabel}</span>
+            </>
+          ) : (
+            <span className="truncate">{typeLabel}</span>
+          )}
         </div>
 
         <ClipboardQuickActions

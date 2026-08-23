@@ -21,9 +21,8 @@ use tauri::{AppHandle, Emitter, Manager};
 use super::app_store::AppIconStore;
 use super::apps_registry::AppsRegistry;
 use super::guard::WritebackGuard;
-use super::ingest::build_item_with_settings;
+use super::ingest::build_item_with_source;
 use super::read::ClipboardReader;
-use super::sound;
 use super::source::{self, FrontmostApp};
 use super::storage::ImageStore;
 use crate::db::apps::upsert_app;
@@ -119,6 +118,23 @@ pub fn materialize_source(
     app
 }
 
+/// 复制成功反馈：仅当 `add_deduplicated` 为 false（本次是真正新入库，而非同内容重复复制）
+/// 且设置开启 `feedback.copy_sound` 时，在屏幕右下角弹一个独立置顶小窗提示。频率与剪贴板
+/// 事件相当，但只在开关开启且非去重时广播；失败仅记日志，不阻断入库主流程。
+fn notify_copy_feedback(app: &AppHandle, deduplicated: bool) {
+    if deduplicated {
+        return;
+    }
+    let enabled = app
+        .try_state::<SettingsStore>()
+        .map(|s| s.snapshot().clipboard.feedback.copy_sound)
+        .unwrap_or(false);
+    if !enabled {
+        return;
+    }
+    crate::window::copied::show(app);
+}
+
 /// 去重入库 + emit「剪贴板更新」事件。监听回调与 `read_clipboard` 命令共用，
 /// 保证两条路径的入库语义与事件契约一致。失败仅记日志（监听场景无人接收 Result）。
 ///
@@ -141,7 +157,7 @@ pub async fn persist_and_notify(
         }
     }
     let result = upsert_item(pool, &item_to_write).await?;
-    sound::maybe_play_copy(app);
+    notify_copy_feedback(app, result.deduplicated);
     if let Err(err) = app.emit(
         CLIPBOARD_UPDATED_EVENT,
         json!({
@@ -308,12 +324,13 @@ impl ClipboardHandler for ClipboardChangeHandler {
             }
         };
 
-        let mut item = match build_item_with_settings(
+        let mut item = match build_item_with_source(
             &self.store,
             &payload,
             &settings.clipboard.capture,
             &settings.clipboard.sensitive,
             settings.clipboard.content.copy_plain,
+            source.as_ref().map(|s| s.name.as_str()),
         ) {
             Ok(Some(item)) => item,
             Ok(None) => return,

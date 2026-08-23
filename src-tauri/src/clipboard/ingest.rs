@@ -13,7 +13,7 @@ use chrono::Utc;
 
 use super::detect::detect_text_sub_kind;
 use super::payload::{ClipboardPayload, TextPayload};
-use super::secrets::contains_secret;
+use super::secrets::{contains_personal_info, contains_secret};
 use super::storage::ImageStore;
 use crate::core::Result;
 use crate::db::items::content_hash;
@@ -190,6 +190,7 @@ pub fn build_item(store: &ImageStore, payload: &ClipboardPayload) -> Result<Opti
 }
 
 /// 把载荷转换为待入库记录，同时应用内容类型与隐私过滤设置。
+/// 便捷入口：无明确来源名（测试 / 导入等场景）时，图片临时文件名来源退化为 `unknown`。
 pub fn build_item_with_settings(
     store: &ImageStore,
     payload: &ClipboardPayload,
@@ -197,10 +198,25 @@ pub fn build_item_with_settings(
     sensitive: &Sensitive,
     plain_only: bool,
 ) -> Result<Option<ClipboardItem>> {
+    build_item_with_source(store, payload, capture, sensitive, plain_only, None)
+}
+
+/// 带来源名的构建入口。`source_name` 用于无原始路径图片的临时文件名前缀（「来源_时间」）；
+/// 监听 / 命令场景把前台应用名传进来，其余传 `None`。
+pub fn build_item_with_source(
+    store: &ImageStore,
+    payload: &ClipboardPayload,
+    capture: &Capture,
+    sensitive: &Sensitive,
+    plain_only: bool,
+    source_name: Option<&str>,
+) -> Result<Option<ClipboardItem>> {
     let mut is_sensitive = false;
     let draft = match payload {
         ClipboardPayload::Text(text) => {
-            if contains_secret(&text.text) {
+            // 敏感判定：高置信密钥 / Token 或高置信个人隐私（身份证、手机号、银行卡）。
+            // 命中且未开启收录 → 整条不入库；开启收录 → 入库并标记敏感（过期自毁 + 脱敏）。
+            if contains_secret(&text.text) || contains_personal_info(&text.text) {
                 if !sensitive.collect_secrets {
                     return Ok(None);
                 }
@@ -261,16 +277,9 @@ pub fn build_item_with_settings(
             if !capture.image {
                 return Ok(None);
             }
-            if exceeds_limit(image.bytes.len(), capture.max_image_bytes()) {
-                log::info!(
-                    "clipboard image skipped because size {} exceeds limit {:?}",
-                    image.bytes.len(),
-                    capture.max_image_bytes()
-                );
-                return Ok(None);
-            }
 
-            let stored = store.store(image)?;
+            // 无原始路径的图片统一存临时目录，不设大小上限；回收由 24h 定时清理负责。
+            let stored = store.store(image, source_name)?;
             Some(Draft {
                 kind: ClipboardKind::Image,
                 sub_kind: None,
@@ -300,6 +309,14 @@ pub fn build_item_with_settings(
     }
 
     let now = Utc::now();
+    // 敏感条目且配置了 TTL → 设置过期时间供清理任务自动清除；未开 TTL / 非敏感条目为 None。
+    let sensitive_expires_at = if is_sensitive {
+        let ttl_hours = u64::from(sensitive.sensitive_ttl_hours);
+        (ttl_hours > 0).then(|| now + chrono::Duration::hours(ttl_hours as i64))
+    } else {
+        None
+    };
+
     Ok(Some(ClipboardItem {
         id: uuid::Uuid::new_v4().to_string(),
         content_hash: content_hash(draft.kind, &draft.content),
@@ -318,6 +335,7 @@ pub fn build_item_with_settings(
         is_favorite: false,
         is_pinned: false,
         is_sensitive,
+        sensitive_expires_at,
         platform: current_platform(),
         note: None,
         created_at: now,
@@ -646,6 +664,7 @@ mod tests {
             &Sensitive {
                 collect_secrets: true,
                 redact_secrets: false,
+                ..Default::default()
             },
             false,
         )
@@ -667,6 +686,7 @@ mod tests {
             &Sensitive {
                 collect_secrets: false,
                 redact_secrets: true,
+                ..Default::default()
             },
             false,
         )
@@ -685,6 +705,7 @@ mod tests {
             &Sensitive {
                 collect_secrets: true,
                 redact_secrets: true,
+                ..Default::default()
             },
             false,
         )
@@ -722,6 +743,7 @@ mod tests {
             &Sensitive {
                 collect_secrets: true,
                 redact_secrets: true,
+                ..Default::default()
             },
             false,
         )
@@ -799,25 +821,29 @@ mod tests {
     }
 
     #[test]
-    fn image_limit_skips_before_writing_origin() {
+    fn image_is_stored_without_size_cap() {
         let (_d, s) = store();
-        let capture = Capture {
-            max_image_mb: 1,
-            ..Capture::default()
-        };
+        // 图片不再设大小上限：大图仍应入库且原图落盘（临时目录，来源 unknown）。
         let bytes = vec![1; 1024 * 1024 + 1];
         let payload = ClipboardPayload::Image(ImagePayload {
             bytes: bytes.clone(),
             width: 20,
             height: 10,
         });
-        let item =
-            build_item_with_settings(&s, &payload, &capture, &Sensitive::default(), false).unwrap();
+        let item = build_item_with_settings(
+            &s,
+            &payload,
+            &Capture::default(),
+            &Sensitive::default(),
+            false,
+        )
+        .unwrap()
+        .unwrap();
 
-        assert!(item.is_none());
-        assert!(!s
-            .origin_path(&format!("{}.png", blake3::hash(&bytes).to_hex()))
-            .exists());
+        assert_eq!(item.kind, ClipboardKind::Image);
+        assert!(item.content.starts_with("unknown_"));
+        assert!(s.origin_path(&item.content).exists());
+        assert_eq!(std::fs::read(s.origin_path(&item.content)).unwrap(), bytes);
     }
 
     #[test]

@@ -23,6 +23,10 @@
     "searchGroupFavorites": "No favorites in \"{{group}}\" match \"{{keyword}}\"",
     "searchHistory": "No records found for \"{{keyword}}\""
   },
+  "entities": {
+    "fill": "Fill",
+    "open": "Open"
+  },
   "footer": {
     "shortcuts": "Shortcuts",
     "total": "{{count}} items"
@@ -76,9 +80,17 @@
     "pinItem": "Pin to Top",
     "pinItemActive": "Unpin from Top",
     "reveal": "Show in File Manager",
+    "segmentFill": "Segment & Fill",
     "sendEmail": "Send Email",
     "star": "Favorite",
     "starActive": "Unfavorite"
+  },
+  "segmentFill": {
+    "empty": "No words to split",
+    "fill": "Fill {{count}} word(s)",
+    "hint": "Click words to multi-select disjoint ones; click and drag to box-select a continuous range",
+    "placeholder": "Click or drag to select words; multi-select or swipe a continuous range",
+    "title": "Segment & Fill"
   },
   "shortcuts": {
     "closePreviewFilterWindow": "Close preview / filters / window",

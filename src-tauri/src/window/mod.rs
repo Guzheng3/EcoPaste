@@ -1,3 +1,5 @@
+pub mod copied;
+pub mod effects;
 pub mod lifecycle;
 pub(super) mod position;
 pub mod preview;
@@ -24,7 +26,6 @@ pub const CLIPBOARD_WINDOW_LABEL: &str = "clipboard";
 pub const PREFERENCE_WINDOW_LABEL: &str = "preference";
 pub const CLIPBOARD_PREVIEW_WINDOW_LABEL: &str = "clipboard-preview";
 pub const ONBOARDING_WINDOW_LABEL: &str = "onboarding";
-pub const UPDATE_WINDOW_LABEL: &str = "update";
 
 /// 偏好页定位高亮事件。前端收到后切到目标设置项所在分类并滚动高亮。
 const PREFERENCE_HIGHLIGHT_EVENT: &str = "preference://highlight-setting";
@@ -203,20 +204,34 @@ pub fn position_window(app_handle: &AppHandle, label: &str, pos: WindowPosition)
     position::position_window(&window, pos)
 }
 
-/// 剪贴板窗口显示前按设置应用窗口定位策略。
+/// 剪贴板窗口显示前应用窗口定位策略。
 /// 始终先调用 `restore_window_state` 恢复尺寸与合法位置（含越界 fallback）；
-/// 非 Remember 策略再由 `position_window` 覆盖位置。
+/// 再用 [`position::fit_default_size`] 把尺寸按当前屏分辨率 + DPI 自适应缩放（覆盖旧持久化尺寸，
+/// 默认 587×1055）；非 Remember 策略再由 `position_window` 覆盖位置。
 /// 平台 `show_window` 需要在主线程闭包里调用，避免 set_position 与 show 异步交错产生闪烁。
 fn apply_clipboard_window_layout(app_handle: &AppHandle) -> Result<()> {
+    let _ = state::restore_window_state(app_handle, CLIPBOARD_WINDOW_LABEL)?;
+
+    // 尺寸自适应：默认 587×1055，按光标所在屏缩放适配。
+    if let Ok(window) = get_window(app_handle, CLIPBOARD_WINDOW_LABEL) {
+        if let Err(err) = position::fit_default_size(&window) {
+            log::warn!("fit clipboard window size failed: {err}");
+        }
+    }
+
     let Some(store) = app_handle.try_state::<SettingsStore>() else {
         return Ok(());
     };
     let snap = store.snapshot();
     let position = snap.clipboard.window.position;
 
-    let _ = state::restore_window_state(app_handle, CLIPBOARD_WINDOW_LABEL)?;
-
     if matches!(position, WindowPosition::Remember) {
+        // 自适应使窗口可能比旧持久化尺寸更大，越界时回落到当前屏中心。
+        if let Ok(window) = get_window(app_handle, CLIPBOARD_WINDOW_LABEL) {
+            if let Err(err) = position::recenter_if_out_of_bounds(&window) {
+                log::warn!("recenter clipboard window failed: {err}");
+            }
+        }
         return Ok(());
     }
 
@@ -298,42 +313,6 @@ pub fn build_preference_window(app_handle: &AppHandle) -> Result<()> {
     builder
         .build()
         .map_err(|err| anyhow::anyhow!("build preference window: {err}"))?;
-
-    Ok(())
-}
-
-/// 按需创建软件更新窗口。更新流程由 Rust updater 命令驱动，窗口只负责渲染状态。
-pub fn build_update_window(app_handle: &AppHandle) -> Result<()> {
-    if app_handle.get_webview_window(UPDATE_WINDOW_LABEL).is_some() {
-        return Ok(());
-    }
-
-    let builder = WebviewWindowBuilder::new(
-        app_handle,
-        UPDATE_WINDOW_LABEL,
-        WebviewUrl::App("index.html/#/update".into()),
-    )
-    .title("EcoPaste Update")
-    .inner_size(520.0, 230.0)
-    .min_inner_size(520.0, 230.0)
-    .center()
-    .maximizable(false)
-    .resizable(false)
-    .skip_taskbar(true)
-    .accept_first_mouse(true)
-    .disable_drag_drop_handler()
-    .decorations(true)
-    .transparent(false)
-    .visible(false);
-
-    #[cfg(target_os = "macos")]
-    let builder = builder
-        .title_bar_style(tauri::TitleBarStyle::Overlay)
-        .hidden_title(true);
-
-    builder
-        .build()
-        .map_err(|err| anyhow::anyhow!("build update window: {err}"))?;
 
     Ok(())
 }

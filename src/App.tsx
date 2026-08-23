@@ -58,8 +58,23 @@ const App: FC = () => {
       ? "dark"
       : settings.appearance.theme;
   const language = settings.appearance.language;
+  const windowEffect = settings.appearance.windowEffect;
   const antdTheme = useAppTheme(mode);
   const locale = resolveAntdLocale(language);
+
+  // 窗口毛玻璃材质：挂到 html 上供 global.scss 完整复刻 TieZ 毛玻璃（半透明 antd 变量 +
+  // backdrop-filter 玻璃面），透出 Rust 侧挂载的系统亚克力材质。引导窗口固定深色 UI，不参与。
+  useEffect(() => {
+    const root = document.documentElement;
+    const active =
+      windowLabel !== WINDOW_LABEL.ONBOARDING && windowEffect !== "none";
+
+    root.classList.toggle("vibrancy", active);
+    root.classList.toggle(
+      "vibrancy-acrylic",
+      active && windowEffect === "acrylic",
+    );
+  }, [windowLabel, windowEffect]);
 
   useEffect(() => {
     document.documentElement.lang = language;

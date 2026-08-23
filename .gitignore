@@ -6,6 +6,10 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+pnpm-debug.log*
+
+# CodeGraph
+.codegraph/
 
 node_modules
 dist

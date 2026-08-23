@@ -178,6 +178,7 @@ mod tests {
             is_favorite: false,
             is_pinned: false,
             is_sensitive: false,
+            sensitive_expires_at: None,
             platform: Platform::Macos,
             note: None,
             created_at: Utc::now(),
@@ -258,11 +259,14 @@ mod tests {
         // 先落盘一张原图（模拟历史记录里的 image item）。
         let png = sample_png(48, 32);
         let stored = store
-            .store(&ImagePayload {
-                bytes: png,
-                width: 48,
-                height: 32,
-            })
+            .store(
+                &ImagePayload {
+                    bytes: png,
+                    width: 48,
+                    height: 32,
+                },
+                None,
+            )
             .unwrap();
         let item = ClipboardItem {
             id: uuid::Uuid::new_v4().to_string(),
@@ -282,6 +286,7 @@ mod tests {
             is_favorite: false,
             is_pinned: false,
             is_sensitive: false,
+            sensitive_expires_at: None,
             platform: Platform::Macos,
             note: None,
             created_at: Utc::now(),

@@ -91,15 +91,6 @@ export const preferenceTabs: PreferenceTab[] = [
             },
           },
           {
-            control: { min: 0, suffixKey: "mb", type: "number" },
-            id: "capture.maxImageMb",
-            keywords: ["image", "picture", "size", "limit", "mb"],
-            path: ["clipboard", "capture", "maxImageMb"],
-            value: (settings) => {
-              return settings.clipboard.capture.maxImageMb;
-            },
-          },
-          {
             control: {
               options: CAPTURE_KIND_OPTIONS,
               type: "sortableTree",
@@ -148,6 +139,15 @@ export const preferenceTabs: PreferenceTab[] = [
               return settings.clipboard.sensitive.redactSecrets;
             },
           },
+          {
+            control: { min: 0, suffixKey: "hours", type: "number" },
+            id: "sensitive.sensitiveTtlHours",
+            keywords: ["sensitive", "expiry", "ttl", "auto", "clear"],
+            path: ["clipboard", "sensitive", "sensitiveTtlHours"],
+            value: (settings) => {
+              return settings.clipboard.sensitive.sensitiveTtlHours;
+            },
+          },
         ],
       },
     ],
@@ -175,15 +175,6 @@ export const preferenceTabs: PreferenceTab[] = [
             path: ["clipboard", "history", "maxCount"],
             value: (settings) => {
               return settings.clipboard.history.maxCount;
-            },
-          },
-          {
-            control: { min: 0, suffixKey: "hours", type: "number" },
-            id: "history.cleanupIntervalHours",
-            keywords: ["cleanup", "interval", "schedule"],
-            path: ["clipboard", "history", "cleanupIntervalHours"],
-            value: (settings) => {
-              return settings.clipboard.history.cleanupIntervalHours;
             },
           },
         ],
@@ -329,8 +320,25 @@ export const preferenceTabs: PreferenceTab[] = [
           },
           {
             control: { type: "switch" },
+            id: "copy.extractEntities",
+            keywords: [
+              "extract",
+              "entity",
+              "link",
+              "url",
+              "email",
+              "phone",
+              "qq",
+            ],
+            path: ["clipboard", "content", "extractEntities"],
+            value: (settings) => {
+              return settings.clipboard.content.extractEntities;
+            },
+          },
+          {
+            control: { type: "switch" },
             id: "copy.sound",
-            keywords: ["sound", "feedback", "copy"],
+            keywords: ["copy", "feedback", "toast", "notification"],
             path: ["clipboard", "feedback", "copySound"],
             value: (settings) => {
               return settings.clipboard.feedback.copySound;
@@ -541,6 +549,25 @@ export const preferenceTabs: PreferenceTab[] = [
             path: ["appearance", "theme"],
             value: (settings) => {
               return settings.appearance.theme;
+            },
+          },
+          {
+            control: {
+              options: [{ value: "acrylic" }, { value: "none" }],
+              type: "segmented",
+            },
+            id: "appearance.windowEffect",
+            keywords: [
+              "window",
+              "effect",
+              "acrylic",
+              "vibrancy",
+              "blur",
+              "glass",
+            ],
+            path: ["appearance", "windowEffect"],
+            value: (settings) => {
+              return settings.appearance.windowEffect;
             },
           },
           {
@@ -818,58 +845,6 @@ export const preferenceTabs: PreferenceTab[] = [
           },
         ],
       },
-      {
-        id: "updates",
-        settings: [
-          {
-            control: { type: "switch" },
-            id: "updates.autoCheck",
-            keywords: ["update", "version"],
-            path: ["update", "autoCheck"],
-            value: (settings) => {
-              return settings.update.autoCheck;
-            },
-          },
-          {
-            control: {
-              options: [
-                { value: "daily" },
-                { value: "weekly" },
-                { value: "monthly" },
-              ],
-              type: "segmented",
-            },
-            disabledWhen: (settings) => {
-              return !settings.update.autoCheck;
-            },
-            id: "updates.frequency",
-            keywords: ["update", "frequency", "schedule"],
-            parentId: "updates.autoCheck",
-            path: ["update", "frequency"],
-            value: (settings) => {
-              return settings.update.frequency;
-            },
-          },
-          {
-            control: { type: "switch" },
-            id: "updates.beta",
-            keywords: ["beta", "update"],
-            path: ["update", "includeBeta"],
-            value: (settings) => {
-              return settings.update.includeBeta;
-            },
-          },
-          {
-            control: { type: "switch" },
-            id: "updates.nightly",
-            keywords: ["nightly", "update"],
-            path: ["update", "includeNightly"],
-            value: (settings) => {
-              return settings.update.includeNightly;
-            },
-          },
-        ],
-      },
     ],
   },
   {
@@ -879,11 +854,6 @@ export const preferenceTabs: PreferenceTab[] = [
       {
         id: "about",
         settings: [
-          {
-            control: { type: "action" },
-            id: "about.checkUpdates",
-            keywords: ["update", "version"],
-          },
           {
             control: { type: "action" },
             id: "about.github",
