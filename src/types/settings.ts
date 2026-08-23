@@ -47,6 +47,7 @@ export type ItemAction =
   | "sendEmail"
   | "reveal"
   | "note"
+  | "segmentFill"
   | "star"
   | "pinItem"
   | "delete";
@@ -107,6 +108,7 @@ export interface Content {
   deleteFavoriteItemsOnlyInFavoriteGroup: boolean;
   autoFavorite: boolean;
   updateOnReuse: boolean;
+  extractEntities: boolean;
   sort: ClipboardItemSort;
   itemActions: ItemAction[];
   itemActionOrder: ItemAction[];

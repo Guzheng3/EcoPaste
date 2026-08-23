@@ -5,6 +5,7 @@ import { clipboardViewState } from "@/stores/clipboardView";
 import { settingsState } from "@/stores/settings";
 import type { ClipboardItem } from "@/types/clipboard";
 import { cn } from "@/utils/cn";
+import EntityBar from "./EntityBar";
 
 interface TextCardProps extends ClipboardItem {
   /**
@@ -22,13 +23,15 @@ interface TextCardProps extends ClipboardItem {
  * 子类型（HTML/RTF/URL/Email/Color/Path）以小 Tag 提示。
  */
 const TextCard: FC<TextCardProps> = (props) => {
-  const { summary, subKind, colorPreview, isLinkActive, onOpenLink } = props;
+  const { summary, subKind, colorPreview, isLinkActive, onOpenLink, id } =
+    props;
   const { keyword } = useSnapshot(clipboardViewState);
   const { clipboard } = useSnapshot(settingsState);
   const textMaxLines = clipboard.display.textMaxLines;
   const lineClampClass = textLineClampClass(textMaxLines);
   const isOpenableLink =
     isLinkActive && (subKind === "url" || subKind === "email");
+  const showEntities = clipboard.content.extractEntities && subKind !== "color";
 
   if (subKind === "color" && colorPreview) {
     const style: CSSProperties = {
@@ -75,9 +78,12 @@ const TextCard: FC<TextCardProps> = (props) => {
   }
 
   return (
-    <div className={cn("whitespace-pre-wrap", lineClampClass)}>
-      <Highlight keyword={keyword} text={summary ?? ""} />
-    </div>
+    <>
+      <div className={cn("whitespace-pre-wrap", lineClampClass)}>
+        <Highlight keyword={keyword} text={summary ?? ""} />
+      </div>
+      {showEntities ? <EntityBar itemId={id} /> : null}
+    </>
   );
 };
 

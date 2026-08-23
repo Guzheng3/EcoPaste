@@ -377,6 +377,8 @@ pub struct Content {
     pub auto_favorite: bool,
     /// 从历史中复制 / 粘贴时，是否刷新使用次数与 `updated_at`。
     pub update_on_reuse: bool,
+    /// 文本卡片是否自动提取链接 / 邮箱 / 手机号 / QQ 并以实体下拉框展示。
+    pub extract_entities: bool,
     /// 历史列表默认排序，和 `ClipboardItemQuery.sort` 使用同一套契约字面量。
     pub sort: ClipboardItemSort,
     /// 列表项悬停操作按钮（仅保存已启用项，顺序按 `item_action_order` 过滤）。
@@ -403,10 +405,12 @@ impl Default for Content {
             delete_favorite_items_only_in_favorite_group: true,
             auto_favorite: false,
             update_on_reuse: false,
+            extract_entities: true,
             sort: ClipboardItemSort::UpdatedAt,
             item_actions: vec![
                 ItemAction::Copy,
                 ItemAction::Star,
+                ItemAction::SegmentFill,
                 ItemAction::PinItem,
                 ItemAction::Delete,
             ],
@@ -420,6 +424,7 @@ impl Default for Content {
                 ItemAction::SendEmail,
                 ItemAction::Reveal,
                 ItemAction::Note,
+                ItemAction::SegmentFill,
                 ItemAction::Star,
                 ItemAction::PinItem,
                 ItemAction::Delete,
@@ -493,6 +498,7 @@ pub enum ItemAction {
     SendEmail,
     Reveal,
     Note,
+    SegmentFill,
     Star,
     PinItem,
     Delete,

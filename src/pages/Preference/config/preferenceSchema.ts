@@ -338,6 +338,23 @@ export const preferenceTabs: PreferenceTab[] = [
           },
           {
             control: { type: "switch" },
+            id: "copy.extractEntities",
+            keywords: [
+              "extract",
+              "entity",
+              "link",
+              "url",
+              "email",
+              "phone",
+              "qq",
+            ],
+            path: ["clipboard", "content", "extractEntities"],
+            value: (settings) => {
+              return settings.clipboard.content.extractEntities;
+            },
+          },
+          {
+            control: { type: "switch" },
             id: "copy.sound",
             keywords: ["copy", "feedback", "toast", "notification"],
             path: ["clipboard", "feedback", "copySound"],

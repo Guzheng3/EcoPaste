@@ -158,3 +158,16 @@ export interface UpdateNoteResult {
   note: string | null;
   autoFavorited: boolean;
 }
+
+/**
+ * 从文本中提取出的一个可交互实体（链接 / 邮箱 / 手机号 / QQ）。
+ * `start` / `end` 为原始字节区间，前端仅用于排序与去重，无需展示。
+ */
+export type ExtractedEntityKind = "url" | "email" | "phone" | "qq";
+
+export interface ExtractedEntity {
+  kind: ExtractedEntityKind;
+  value: string;
+  start: number;
+  end: number;
+}

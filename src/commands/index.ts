@@ -21,6 +21,7 @@ import type {
   ClipboardItemQuery,
   ClipboardKind,
   ClipboardSubKind,
+  ExtractedEntity,
   UpdateNoteResult,
 } from "@/types/clipboard";
 import type { Settings, SettingsPatch } from "@/types/settings";
@@ -914,6 +915,51 @@ export const pasteClipboardItem = (id: string, plain: boolean) => {
     TAURI_COMMAND.PASTE_CLIPBOARD_ITEM,
     "commands:labels.paste",
     { id, plain },
+  );
+};
+
+/**
+ * 按 id 对单条文本记录做中文 / 英文拆词，返回有序词块数组（非文本记录返回空）。
+ * 供「拆词填入」弹层多选 / 滑选前获取词块。
+ */
+export const segmentClipboardItem = (id: string) => {
+  return call<string[]>(
+    TAURI_COMMAND.SEGMENT_CLIPBOARD_ITEM,
+    "commands:labels.loadSegment",
+    { id },
+  );
+};
+
+/**
+ * 把已选词块拼接的文本写入系统剪贴板并模拟粘贴到前台输入框。
+ * Rust 侧会先隐藏剪贴板窗口再模拟 ⌘V / Ctrl+V。
+ */
+export const fillSelectedText = (text: string) => {
+  return call<void>(TAURI_COMMAND.FILL_SELECTED_TEXT, "commands:labels.fill", {
+    text,
+  });
+};
+
+/**
+ * 按 id 读一条文本记录，返回其中提取的链接 / 邮箱 / 手机号 / QQ（按出现顺序去重）。
+ * 供文本卡片下方的实体下拉框使用。
+ */
+export const extractItemEntities = (id: string) => {
+  return call<ExtractedEntity[]>(
+    TAURI_COMMAND.EXTRACT_ITEM_ENTITIES,
+    "commands:labels.extractEntities",
+    { id },
+  );
+};
+
+/**
+ * 打开一个已提取实体：链接打开系统浏览器、邮箱唤起邮件客户端。键入走 `fillSelectedText`。
+ */
+export const openEntityLink = (kind: string, value: string) => {
+  return call<void>(
+    TAURI_COMMAND.OPEN_ENTITY_LINK,
+    "commands:labels.openEntity",
+    { kind, value },
   );
 };
 

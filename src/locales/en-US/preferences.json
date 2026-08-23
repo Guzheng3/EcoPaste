@@ -321,6 +321,10 @@
         }
       },
       "copy": {
+        "extractEntities": {
+          "description": "Auto-extract links, email addresses, phone numbers and QQ IDs from text records and show them in a dropdown, with one-click open or fill.",
+          "title": "Auto-extract Entities"
+        },
         "hideWindow": {
           "description": "After copying a history record, automatically hide the clipboard window.",
           "title": "Hide Window After Copy"

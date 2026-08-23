@@ -23,6 +23,10 @@
     "searchGroupFavorites": "「{{group}}」分组下的收藏中未找到与「{{keyword}}」相关的记录",
     "searchHistory": "未找到「{{keyword}}」相关记录"
   },
+  "entities": {
+    "fill": "键入",
+    "open": "打开"
+  },
   "footer": {
     "shortcuts": "快捷键",
     "total": "共 {{count}} 项"
@@ -76,9 +80,17 @@
     "pinItem": "置顶",
     "pinItemActive": "取消置顶",
     "reveal": "在文件管理器中显示",
+    "segmentFill": "拆词填入",
     "sendEmail": "发送邮件",
     "star": "收藏",
     "starActive": "取消收藏"
+  },
+  "segmentFill": {
+    "empty": "没有可拆分的词块",
+    "fill": "填入 {{count}} 个词块",
+    "hint": "点击词块可多选不连续；按住并拖动可一次框选连续词块",
+    "placeholder": "点击或滑动选择词块，可多选 / 滑选连续区间",
+    "title": "拆词填入"
   },
   "shortcuts": {
     "closePreviewFilterWindow": "关闭预览 / 筛选 / 窗口",
