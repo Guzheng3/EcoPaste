@@ -28,6 +28,14 @@ const CLIPBOARD_SORT_OPTIONS = [
   { value: "updatedAtDesc" },
   { value: "useCountDesc" },
 ];
+const WINDOW_ASPECT_RATIO_OPTIONS = [
+  { value: "3:5" },
+  { value: "2:3" },
+  { value: "1:1" },
+  { value: "4:5" },
+  { value: "3:4" },
+  { value: "9:16" },
+];
 export const preferenceTabs: PreferenceTab[] = [
   {
     icon: "i-lucide:clipboard-plus",
@@ -449,6 +457,30 @@ export const preferenceTabs: PreferenceTab[] = [
             path: ["clipboard", "window", "position"],
             value: (settings) => {
               return settings.clipboard.window.position;
+            },
+          },
+          {
+            control: {
+              max: 200,
+              min: 50,
+              step: 5,
+              suffixKey: "percent",
+              type: "slider",
+            },
+            id: "window.scalePercent",
+            keywords: ["window", "size", "scale", "zoom", "dpi"],
+            path: ["clipboard", "window", "scalePercent"],
+            value: (settings) => {
+              return settings.clipboard.window.scalePercent;
+            },
+          },
+          {
+            control: { options: WINDOW_ASPECT_RATIO_OPTIONS, type: "select" },
+            id: "window.aspectRatio",
+            keywords: ["window", "aspect", "ratio", "size", "shape"],
+            path: ["clipboard", "window", "aspectRatio"],
+            value: (settings) => {
+              return settings.clipboard.window.aspectRatio;
             },
           },
           {

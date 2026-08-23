@@ -11,7 +11,6 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSnapshot } from "valtio";
 import {
-  createClipboardGroup,
   deleteClipboardGroup,
   listClipboardGroups,
   openPreferenceWithHighlight,
@@ -36,8 +35,7 @@ import type {
 import { cn } from "@/utils/cn";
 import { getModalApi } from "@/utils/feedback";
 
-type GroupModalMode = "create" | "edit";
-type MoreMenuAction = "manageGroups" | "newGroup";
+type MoreMenuAction = "manageGroups";
 type GroupMenuAction = "delete" | "edit" | "hide";
 type MoreMenuGroupKey = `group:${string}`;
 
@@ -97,7 +95,6 @@ const GROUP_MENU_ACTION = {
 
 const MORE_MENU_ACTION = {
   MANAGE_GROUPS: "manageGroups",
-  NEW_GROUP: "newGroup",
 } as const satisfies Record<string, MoreMenuAction>;
 
 const CUSTOM_GROUPS_SETTING_ID = "organizing.customGroups";
@@ -121,7 +118,6 @@ const Group: FC = () => {
 
   const [customGroups, setCustomGroups] = useState<ClipboardGroupRecord[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
-  const [modalMode, setModalMode] = useState<GroupModalMode>("create");
   const [visibleCustomGroupCount, setVisibleCustomGroupCount] = useState(
     Number.POSITIVE_INFINITY,
   );
@@ -323,19 +319,9 @@ const Group: FC = () => {
   };
 
   /**
-   * 打开新增分组弹框。
-   */
-  const openCreateModal = () => {
-    setModalMode("create");
-    setEditingGroup(null);
-    setModalOpen(true);
-  };
-
-  /**
    * 打开编辑分组弹框。
    */
   const openEditModal = (record: ClipboardGroupRecord) => {
-    setModalMode("edit");
     setEditingGroup(record);
     setModalOpen(true);
   };
@@ -352,12 +338,6 @@ const Group: FC = () => {
    * 保存分组弹框内容。
    */
   const handleModalSubmit = async (input: ClipboardGroupInput) => {
-    if (modalMode === "create") {
-      await createClipboardGroup(input);
-      closeModal();
-      return;
-    }
-
     if (!editingGroup) return;
 
     await updateClipboardGroup(editingGroup.id, input);
@@ -394,13 +374,6 @@ const Group: FC = () => {
   };
 
   /**
-   * 执行新增分组动作。
-   */
-  const handleCreateGroupAction = () => {
-    openCreateModal();
-  };
-
-  /**
    * 打开偏好设置并定位到自定义分组管理项。
    */
   const openGroupPreference = async () => {
@@ -408,15 +381,10 @@ const Group: FC = () => {
   };
 
   /**
-   * 执行更多菜单动作：新增 / 管理分组，或切换到溢出的自定义分组。
+   * 执行更多菜单动作：管理分组，或切换到溢出的自定义分组。
    */
   const handleMoreMenuClick = async (info: { key: string }) => {
     const action = parseMoreMenuAction(info.key);
-    if (action === MORE_MENU_ACTION.NEW_GROUP) {
-      handleCreateGroupAction();
-      return;
-    }
-
     if (action === MORE_MENU_ACTION.MANAGE_GROUPS) {
       await openGroupPreference();
       return;
@@ -467,7 +435,6 @@ const Group: FC = () => {
   };
 
   const groupMenuItems = buildGroupActionMenuItems(t);
-  const createMenuItems = buildCreateMenuItems(t);
 
   /**
    * 记录溢出菜单中右键菜单所属分组。
@@ -512,40 +479,7 @@ const Group: FC = () => {
           })}
           type="button"
         >
-          <KeyHint hintKey="N" onKeyPress={handleCreateGroupAction}>
-            <i aria-hidden className="i-lucide:more-horizontal text-sm!" />
-          </KeyHint>
-        </button>
-      </Dropdown>
-    );
-  };
-
-  /**
-   * 渲染独立新增按钮；存在溢出菜单时由菜单内新增入口承接。
-   */
-  const renderCreateButton = () => {
-    if (overflowCustomGroups.length > 0) return null;
-
-    return (
-      <Dropdown
-        menu={{
-          items: createMenuItems,
-          onClick: handleMoreMenuClick,
-        }}
-        tooltip={t("clipboard:groups.add")}
-        trigger={["contextMenu"]}
-      >
-        <button
-          className={cn(
-            GROUP_BUTTON_BASE_CLASS,
-            "text-ant-secondary hover:bg-ant-fill-tertiary",
-          )}
-          onClick={handleCreateGroupAction}
-          type="button"
-        >
-          <KeyHint hintKey="N" onKeyPress={handleCreateGroupAction}>
-            <i aria-hidden className="i-lucide:plus text-sm!" />
-          </KeyHint>
+          <i aria-hidden className="i-lucide:more-horizontal text-sm!" />
         </button>
       </Dropdown>
     );
@@ -678,12 +612,11 @@ const Group: FC = () => {
         )}
 
         {renderMoreButton()}
-        {renderCreateButton()}
       </div>
 
       <ClipboardGroupModal
         group={editingGroup}
-        mode={modalMode}
+        mode="edit"
         onCancel={closeModal}
         onSubmit={handleModalSubmit}
         open={modalOpen}
@@ -836,22 +769,8 @@ function buildGroupActionMenuItems(
 }
 
 /**
- * 构建新增按钮右键菜单；左键继续新增，右键提供管理入口。
- */
-function buildCreateMenuItems(
-  t: TFunction<["clipboard", "common"]>,
-): DropdownMenuItems {
-  return [
-    {
-      icon: "i-lucide:settings-2",
-      key: MORE_MENU_ACTION.MANAGE_GROUPS,
-      label: t("clipboard:groups.manage"),
-    },
-  ];
-}
-
-/**
- * 构建更多菜单项：新增 / 管理入口 + 溢出分组快速入口。
+ * 构建更多菜单项：管理入口 + 溢出分组快速入口。
+ * 新增分组只在偏好设置的分组管理里提供。
  */
 function buildMoreMenuItems(
   groups: ClipboardGroupRecord[],
@@ -877,11 +796,6 @@ function buildMoreMenuItems(
   if (groupItems.length === 0) {
     return [
       {
-        icon: "i-lucide:plus",
-        key: MORE_MENU_ACTION.NEW_GROUP,
-        label: t("clipboard:groups.add"),
-      },
-      {
         icon: "i-lucide:settings-2",
         key: MORE_MENU_ACTION.MANAGE_GROUPS,
         label: t("clipboard:groups.manage"),
@@ -892,11 +806,6 @@ function buildMoreMenuItems(
   return [
     ...groupItems,
     { type: "divider" },
-    {
-      icon: "i-lucide:plus",
-      key: MORE_MENU_ACTION.NEW_GROUP,
-      label: t("clipboard:groups.add"),
-    },
     {
       icon: "i-lucide:settings-2",
       key: MORE_MENU_ACTION.MANAGE_GROUPS,

@@ -179,59 +179,59 @@ const Header: FC = () => {
   ];
 
   return (
-    <div className="flex items-center gap-2 p-3 pb-2" data-tauri-drag-region>
-      <img
-        alt={t("header.logoAlt")}
-        className="size-5 shrink-0"
-        src="/logo.png"
-      />
-
-      <div className="flex min-w-0 flex-1 justify-center">
-        <SearchInput
-          allowClear
-          blurToken={searchBlurToken}
-          className="w-full max-w-lg"
-          clearToken={searchClearToken}
-          focusToken={searchFocusToken}
-          onChange={handleKeywordChange}
-          placeholder={t("header.searchPlaceholder")}
+    <div className="flex flex-col gap-2 px-3 pt-3 pb-2" data-tauri-drag-region>
+      <div className="flex items-center justify-between" data-tauri-drag-region>
+        <img
+          alt={t("header.logoAlt")}
+          className="size-5 shrink-0"
+          src="/logo.png"
         />
+
+        <div className="flex shrink-0 items-center gap-1">
+          <Tooltip title={t(pinned ? "header.unpin" : "header.pin")}>
+            <CustomIconButton
+              icon={
+                <KeyHint
+                  hintKey="P"
+                  iconName="i-lets-icons:pin"
+                  onKeyPress={handleTogglePinned}
+                />
+              }
+              onClick={handleTogglePinned}
+              size="small"
+              type={pinned ? "primary" : "text"}
+            />
+          </Tooltip>
+
+          <Dropdown
+            menu={{ items: moreMenuItems, onClick: handleMoreMenuClick }}
+            tooltip={t("header.moreActions")}
+            trigger={MORE_ACTION_TRIGGER}
+          >
+            <CustomIconButton
+              icon={
+                <KeyHint
+                  hintKey=","
+                  iconName="i-lets-icons:meatballs-menu"
+                  onKeyPress={handleOpenPreference}
+                />
+              }
+              size="small"
+              type="text"
+            />
+          </Dropdown>
+        </div>
       </div>
 
-      <div className="flex shrink-0 items-center gap-1">
-        <Tooltip title={t(pinned ? "header.unpin" : "header.pin")}>
-          <CustomIconButton
-            icon={
-              <KeyHint
-                hintKey="P"
-                iconName="i-lets-icons:pin"
-                onKeyPress={handleTogglePinned}
-              />
-            }
-            onClick={handleTogglePinned}
-            size="small"
-            type={pinned ? "primary" : "text"}
-          />
-        </Tooltip>
-
-        <Dropdown
-          menu={{ items: moreMenuItems, onClick: handleMoreMenuClick }}
-          tooltip={t("header.moreActions")}
-          trigger={MORE_ACTION_TRIGGER}
-        >
-          <CustomIconButton
-            icon={
-              <KeyHint
-                hintKey=","
-                iconName="i-lets-icons:meatballs-menu"
-                onKeyPress={handleOpenPreference}
-              />
-            }
-            size="small"
-            type="text"
-          />
-        </Dropdown>
-      </div>
+      <SearchInput
+        allowClear
+        blurToken={searchBlurToken}
+        className="tiez-search w-full"
+        clearToken={searchClearToken}
+        focusToken={searchFocusToken}
+        onChange={handleKeywordChange}
+        placeholder={t("header.searchPlaceholder")}
+      />
     </div>
   );
 };

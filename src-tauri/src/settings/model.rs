@@ -628,6 +628,10 @@ pub struct Window {
     pub lightweight_mode: bool,
     /// 非剪贴板窗口隐藏后释放 WebView 的空闲秒数。
     pub idle_destroy_seconds: u32,
+    /// 剪贴板窗口缩放百分比（50-200）。作用于基准高度 600，宽度由长宽比换算。
+    pub scale_percent: u8,
+    /// 剪贴板窗口长宽比（宽:高）。默认 3:5（缩放 100% 时即 360×600）。
+    pub aspect_ratio: WindowAspectRatio,
 }
 
 impl Default for Window {
@@ -640,6 +644,40 @@ impl Default for Window {
             select_group_on_open: WINDOW_OPEN_SELECTION_PRESERVE.to_owned(),
             lightweight_mode: true,
             idle_destroy_seconds: 60,
+            scale_percent: 100,
+            aspect_ratio: WindowAspectRatio::default(),
+        }
+    }
+}
+
+/// 剪贴板窗口长宽比（宽:高）。宽度 = 高度 × 比例。
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub enum WindowAspectRatio {
+    #[serde(rename = "3:5")]
+    #[default]
+    Ratio3x5,
+    #[serde(rename = "2:3")]
+    Ratio2x3,
+    #[serde(rename = "1:1")]
+    Ratio1x1,
+    #[serde(rename = "4:5")]
+    Ratio4x5,
+    #[serde(rename = "3:4")]
+    Ratio3x4,
+    #[serde(rename = "9:16")]
+    Ratio9x16,
+}
+
+impl WindowAspectRatio {
+    /// 宽 / 高。
+    pub fn width_over_height(self) -> f64 {
+        match self {
+            Self::Ratio3x5 => 3.0 / 5.0,
+            Self::Ratio2x3 => 2.0 / 3.0,
+            Self::Ratio1x1 => 1.0,
+            Self::Ratio4x5 => 4.0 / 5.0,
+            Self::Ratio3x4 => 3.0 / 4.0,
+            Self::Ratio9x16 => 9.0 / 16.0,
         }
     }
 }
