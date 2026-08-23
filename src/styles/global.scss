@@ -92,10 +92,11 @@ html.vibrancy-acrylic.dark #root {
   box-shadow: 0 10px 38px rgba(0, 0, 0, 0.32);
 }
 
-/* 主列表虚拟滚动：彻底隐藏滚动条 UI（右侧不再出现任何竖条/滑块），
-   仅保留鼠标滚轮 / 触摸滚动行为。OverlayScrollbars 的 `.os-scrollbar` 是它渲染的
-   自定义轨道+把手，display:none 后滚动功能（os-viewport）不受影响。 */
-html.vibrancy-acrylic .os-scrollbar {
+/* 全局彻底隐藏滚动条 UI（剪贴板主列表 / 快捷键面板 / 偏好设置列表 / 搜索结果等所有
+   OverlayScrollbars 容器），右侧不再出现任何竖条/滑块；仅保留鼠标滚轮 / 触摸滚动。
+   OverlayScrollbars 的 `.os-scrollbar` 是它渲染的自定义轨道+把手，display:none 后
+   滚动功能（os-viewport）不受影响。 */
+.os-scrollbar {
   display: none;
 }
 
