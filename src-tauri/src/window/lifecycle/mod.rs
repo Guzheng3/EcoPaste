@@ -288,6 +288,12 @@ pub fn on_shown(app: &AppHandle, label: &str) {
     if let Some(manager) = manager(app) {
         manager.transition(app, label, LifecyclePhase::Visible, "show");
     }
+
+    // 剪贴板窗口首次显示后预热右键菜单窗口，让首次右键不再现场建窗卡顿。
+    #[cfg(target_os = "windows")]
+    if label == super::CLIPBOARD_WINDOW_LABEL {
+        crate::menu::context_window::prewarm(app);
+    }
 }
 
 /// 窗口隐藏成功后记录 `HiddenWarm`。

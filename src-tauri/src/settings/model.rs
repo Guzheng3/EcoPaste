@@ -493,7 +493,7 @@ impl Default for Preview {
         Self {
             hover_enabled: false,
             hover_delay_ms: PreviewHoverDelayMs::Ms500,
-            space_enabled: true,
+            space_enabled: false,
         }
     }
 }
