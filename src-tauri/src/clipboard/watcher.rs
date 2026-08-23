@@ -21,7 +21,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use super::app_store::AppIconStore;
 use super::apps_registry::AppsRegistry;
 use super::guard::WritebackGuard;
-use super::ingest::build_item_with_settings;
+use super::ingest::build_item_with_source;
 use super::read::ClipboardReader;
 use super::source::{self, FrontmostApp};
 use super::storage::ImageStore;
@@ -330,12 +330,13 @@ impl ClipboardHandler for ClipboardChangeHandler {
             }
         };
 
-        let mut item = match build_item_with_settings(
+        let mut item = match build_item_with_source(
             &self.store,
             &payload,
             &settings.clipboard.capture,
             &settings.clipboard.sensitive,
             settings.clipboard.content.copy_plain,
+            source.as_ref().map(|s| s.name.as_str()),
         ) {
             Ok(Some(item)) => item,
             Ok(None) => return,

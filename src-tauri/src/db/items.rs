@@ -396,6 +396,31 @@ pub async fn cleanup_sensitive_expired(
     Ok(outcome)
 }
 
+/// 清理超过 `cutoff` 时长的临时图片记录（`kind = 'image'`）。无原始路径的图片在 temp
+/// 目录只短暂保留（默认 24h），到点连同落盘文件一并清除。收藏 / 置顶项豁免（用户主动保留）。
+/// 返回删除行数 + 被删图片文件名。
+pub async fn cleanup_expired_images(
+    pool: &SqlitePool,
+    cutoff: chrono::DateTime<chrono::Utc>,
+) -> Result<CleanupOutcome> {
+    let rows = sqlx::query_as::<_, (ClipboardKind, String)>(
+        "DELETE FROM clipboard_items \
+         WHERE kind = 'image' \
+           AND is_pinned = 0 \
+           AND is_favorite = 0 \
+           AND created_at < ? \
+         RETURNING kind, content",
+    )
+    .bind(cutoff)
+    .fetch_all(pool)
+    .await
+    .context("failed to cleanup expired temp images")?;
+
+    let mut outcome = CleanupOutcome::default();
+    absorb_deleted(&mut outcome, rows);
+    Ok(outcome)
+}
+
 /// 收藏敏感条目时清空其过期时间（豁免自动清除）。仅在 `now_favorite = true` 时清除，
 /// 取消收藏不恢复过期（条目已因收藏豁免而永久保留）。
 pub async fn clear_sensitive_expiry_on_favorite(
@@ -1275,6 +1300,52 @@ mod tests {
         let outcome = cleanup_history(&pool, Some(cutoff), None).await.unwrap();
         assert_eq!(outcome.removed, 2);
         assert_eq!(outcome.image_files, vec!["cafe1234.png".to_owned()]);
+    }
+
+    #[tokio::test]
+    async fn cleanup_expired_images_removes_old_non_favorite_only() {
+        let pool = memory_pool().await;
+        // 一张旧图片（应删）+ 一张旧收藏图片 + 一张旧文本 + 一张新图片，都早于 cutoff 的仅图片被删。
+        let mut old_img = sample_item("old-img");
+        old_img.kind = ClipboardKind::Image;
+        old_img.content = "Chrome_20240101_000000.000.png".to_owned();
+        old_img.content_hash = content_hash(ClipboardKind::Image, &old_img.content);
+        old_img.created_at = DateTime::from_timestamp(1_000, 0).unwrap();
+
+        let mut fav_img = sample_item("fav-img");
+        fav_img.kind = ClipboardKind::Image;
+        fav_img.content = "Fav_20240101_000000.000.png".to_owned();
+        fav_img.content_hash = content_hash(ClipboardKind::Image, &fav_img.content);
+        fav_img.is_favorite = true;
+        fav_img.created_at = DateTime::from_timestamp(1_000, 0).unwrap();
+
+        let mut old_txt = sample_item("old-txt");
+        old_txt.created_at = DateTime::from_timestamp(1_000, 0).unwrap();
+
+        let mut new_img = sample_item("new-img");
+        new_img.kind = ClipboardKind::Image;
+        new_img.content = "Chrome_20250101_000000.000.png".to_owned();
+        new_img.content_hash = content_hash(ClipboardKind::Image, &new_img.content);
+        new_img.created_at = DateTime::from_timestamp(8_000, 0).unwrap();
+
+        for it in [&old_img, &fav_img, &old_txt, &new_img] {
+            insert_item(&pool, it).await.unwrap();
+        }
+
+        let cutoff = DateTime::from_timestamp(5_000, 0).unwrap();
+        let outcome = cleanup_expired_images(&pool, cutoff).await.unwrap();
+
+        // 仅旧图片被删；收藏图片 / 文本 / 新图片保留。
+        assert_eq!(outcome.removed, 1);
+        assert_eq!(outcome.image_files, vec![old_img.content.clone()]);
+
+        let all = query_items(&pool, &ClipboardItemQuery::default())
+            .await
+            .unwrap();
+        assert!(ids(&all).contains(&"fav-img"));
+        assert!(ids(&all).contains(&"old-txt"));
+        assert!(ids(&all).contains(&"new-img"));
+        assert!(!ids(&all).contains(&"old-img"));
     }
 
     #[test]

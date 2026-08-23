@@ -28,7 +28,7 @@ pub use guard::WritebackGuard;
 pub use icon::{get_icon_cache_key, icon_png, DIR_CACHE_KEY};
 #[cfg(test)]
 pub use ingest::build_item;
-pub use ingest::build_item_with_settings;
+pub use ingest::{build_item_with_settings, build_item_with_source};
 pub use payload::{ClipboardPayload, ImagePayload, TextPayload};
 pub use read::ClipboardReader;
 pub use segment::segment_text;

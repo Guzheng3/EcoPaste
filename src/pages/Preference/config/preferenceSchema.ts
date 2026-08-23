@@ -91,15 +91,6 @@ export const preferenceTabs: PreferenceTab[] = [
             },
           },
           {
-            control: { min: 0, suffixKey: "mb", type: "number" },
-            id: "capture.maxImageMb",
-            keywords: ["image", "picture", "size", "limit", "mb"],
-            path: ["clipboard", "capture", "maxImageMb"],
-            value: (settings) => {
-              return settings.clipboard.capture.maxImageMb;
-            },
-          },
-          {
             control: {
               options: CAPTURE_KIND_OPTIONS,
               type: "sortableTree",
@@ -184,15 +175,6 @@ export const preferenceTabs: PreferenceTab[] = [
             path: ["clipboard", "history", "maxCount"],
             value: (settings) => {
               return settings.clipboard.history.maxCount;
-            },
-          },
-          {
-            control: { min: 0, suffixKey: "hours", type: "number" },
-            id: "history.cleanupIntervalHours",
-            keywords: ["cleanup", "interval", "schedule"],
-            path: ["clipboard", "history", "cleanupIntervalHours"],
-            value: (settings) => {
-              return settings.clipboard.history.cleanupIntervalHours;
             },
           },
         ],

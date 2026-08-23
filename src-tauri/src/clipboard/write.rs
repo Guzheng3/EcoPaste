@@ -259,11 +259,14 @@ mod tests {
         // 先落盘一张原图（模拟历史记录里的 image item）。
         let png = sample_png(48, 32);
         let stored = store
-            .store(&ImagePayload {
-                bytes: png,
-                width: 48,
-                height: 32,
-            })
+            .store(
+                &ImagePayload {
+                    bytes: png,
+                    width: 48,
+                    height: 32,
+                },
+                None,
+            )
             .unwrap();
         let item = ClipboardItem {
             id: uuid::Uuid::new_v4().to_string(),

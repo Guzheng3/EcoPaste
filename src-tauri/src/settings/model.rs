@@ -183,8 +183,6 @@ pub struct Capture {
     pub files: bool,
     /// 文本最大收录大小，单位 MB。`0` = 不限制。
     pub max_text_mb: u32,
-    /// 图片最大收录大小，单位 MB。`0` = 不限制。
-    pub max_image_mb: u32,
     /// 剪贴板同时提供多种表示时的采集优先级。
     pub order: Vec<CaptureKind>,
 }
@@ -198,7 +196,6 @@ impl Default for Capture {
             image: true,
             files: true,
             max_text_mb: 4,
-            max_image_mb: 100,
             order: CaptureKind::default_order(),
         }
     }
@@ -208,11 +205,6 @@ impl Capture {
     /// 返回文本最大收录字节数；`None` 表示不限制。
     pub fn max_text_bytes(&self) -> Option<u64> {
         mb_to_bytes(self.max_text_mb)
-    }
-
-    /// 返回图片最大收录字节数；`None` 表示不限制。
-    pub fn max_image_bytes(&self) -> Option<u64> {
-        mb_to_bytes(self.max_image_mb)
     }
 
     /// 返回去重且补齐缺失项后的采集顺序，避免配置文件里手改出重复项后影响读取。
@@ -531,14 +523,26 @@ pub enum PreviewHoverDelayMs {
     Ms1000,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default, rename_all = "camelCase")]
 pub struct History {
     pub retention: Retention,
     /// 最多保留条数。`0` = 不限。
     pub max_count: u32,
-    /// 自动清理周期（小时）。`0` = 关闭周期清理，但启动时仍清理一次。
-    pub cleanup_interval_hours: u32,
+}
+
+impl Default for History {
+    fn default() -> Self {
+        Self {
+            // 默认保留 30 天，超过后由固定调度（开机 + 每晚午夜）自动清除。
+            retention: Retention {
+                value: 30,
+                unit: RetentionUnit::Days,
+            },
+            // 默认不限制最大条数。
+            max_count: 0,
+        }
+    }
 }
 
 /// 历史保留时长。`unit = Forever` 时忽略 `value`。

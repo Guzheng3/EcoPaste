@@ -127,7 +127,6 @@ export interface Capture {
   image: boolean;
   files: boolean;
   maxTextMb: number;
-  maxImageMb: number;
   order: CaptureKind[];
 }
 
@@ -146,7 +145,6 @@ export interface Retention {
 export interface History {
   retention: Retention;
   maxCount: number;
-  cleanupIntervalHours: number;
 }
 
 export interface Search {

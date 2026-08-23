@@ -12,7 +12,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::clipboard::{
-    add_app_from_path, build_item_with_settings, delete_unreferenced_apps, detect_frontmost,
+    add_app_from_path, build_item_with_source, delete_unreferenced_apps, detect_frontmost,
     extract_entities, materialize_source, persist_and_notify, refresh_running_apps,
     sanitize_css_color, segment_text, AppIconStore, AppsRegistry, ClipboardReader, ExtractedEntity,
     FileIconStore, ImageStore, WritebackGuard,
@@ -92,12 +92,13 @@ pub async fn read_clipboard(
         let settings = app.state::<SettingsStore>().snapshot();
         let payload = reader.read_with_capture(&settings.clipboard.capture)?;
         let item = match payload {
-            Some(payload) => build_item_with_settings(
+            Some(payload) => build_item_with_source(
                 &store,
                 &payload,
                 &settings.clipboard.capture,
                 &settings.clipboard.sensitive,
                 settings.clipboard.content.copy_plain,
+                source.as_ref().map(|s| s.name.as_str()),
             )?,
             None => None,
         };
