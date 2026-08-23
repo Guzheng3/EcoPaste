@@ -18,7 +18,7 @@
         "alwaysOnTop": true,
         "decorations": false,
         "focusable": false,
-        "height": 1055,
+        "height": 600,
         "label": "clipboard",
         "maximizable": false,
         "minHeight": 600,
@@ -28,7 +28,7 @@
         "transparent": true,
         "url": "index.html/#/",
         "visible": false,
-        "width": 587
+        "width": 360
       }
     ]
   },

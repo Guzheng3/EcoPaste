@@ -207,12 +207,12 @@ pub fn position_window(app_handle: &AppHandle, label: &str, pos: WindowPosition)
 /// 剪贴板窗口显示前应用窗口定位策略。
 /// 始终先调用 `restore_window_state` 恢复尺寸与合法位置（含越界 fallback）；
 /// 再用 [`position::fit_default_size`] 把尺寸按当前屏分辨率 + DPI 自适应缩放（覆盖旧持久化尺寸，
-/// 默认 587×1055）；非 Remember 策略再由 `position_window` 覆盖位置。
+/// 默认 360×600）；非 Remember 策略再由 `position_window` 覆盖位置。
 /// 平台 `show_window` 需要在主线程闭包里调用，避免 set_position 与 show 异步交错产生闪烁。
 fn apply_clipboard_window_layout(app_handle: &AppHandle) -> Result<()> {
     let _ = state::restore_window_state(app_handle, CLIPBOARD_WINDOW_LABEL)?;
 
-    // 尺寸自适应：默认 587×1055，按光标所在屏缩放适配。
+    // 尺寸自适应：默认 360×600，按光标所在屏缩放适配。
     if let Ok(window) = get_window(app_handle, CLIPBOARD_WINDOW_LABEL) {
         if let Err(err) = position::fit_default_size(&window) {
             log::warn!("fit clipboard window size failed: {err}");

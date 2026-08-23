@@ -9,6 +9,13 @@ import { log } from "@/utils/log";
 type ResolvedTheme = "light" | "dark";
 type NativeTheme = ResolvedTheme | null;
 
+export interface GlassThemeOptions {
+  /** 当前窗口是否激活毛玻璃（仅挂了系统亚克力底的窗口）。 */
+  enabled: boolean;
+  /** 玻璃面 tint alpha（0-1），来自「透光度」设置。 */
+  tintAlpha: number;
+}
+
 /**
  * 根据用户设置与系统偏好解析当前实际主题。
  */
@@ -54,18 +61,55 @@ const syncTauriWindowTheme = async (
 };
 
 /**
+ * 玻璃面 token：把大面积容器背景换成半透明，透出 Rust 侧挂载的系统亚克力模糊。
+ * 走 `theme.token` 而非 CSS 变量覆盖——antd v6 的组件级变量（`.css-var-xxx`）会遮蔽
+ * html 级覆盖，从 token 源头注入才能真正作用于所有 antd 组件。
+ *
+ * 容器底色再乘 0.55：系统亚克力 tint 已带一层底（`opacity_to_alpha`），两层叠加
+ * 才接近 TieZ 单层 0.56 的观感，避免层叠过厚"看不见毛玻璃"。
+ */
+const GLASS_TINT_FACTOR = 0.55;
+
+/**
  * 解析应用主题并同步系统主题变化、html class 与 Ant Design token 算法。
  */
-export const useAppTheme = (mode: SettingsTheme): ThemeConfig => {
+export const useAppTheme = (
+  mode: SettingsTheme,
+  glass?: GlassThemeOptions,
+): ThemeConfig => {
   const themeUnlistenRef = useRef<UnlistenFn | null>(null);
   const themeMountedRef = useRef(false);
   const [systemTheme, setSystemTheme] = useState<ResolvedTheme>("light");
   const resolvedTheme = resolveTheme(mode, systemTheme);
   const algorithm =
     resolvedTheme === "dark" ? theme.darkAlgorithm : theme.defaultAlgorithm;
+  const glassEnabled = glass?.enabled ?? false;
+  const tintAlpha = glass?.tintAlpha ?? 0;
   const antdTheme = useMemo(() => {
-    return { algorithm };
-  }, [algorithm]);
+    // antd v6 默认启用 CSS 变量模式，token 值会直接写入组件级 `--ant-*` 变量。
+    const config: ThemeConfig = { algorithm };
+
+    if (glassEnabled) {
+      const surface = (
+        Math.max(0, Math.min(1, tintAlpha)) * GLASS_TINT_FACTOR
+      ).toFixed(3);
+
+      config.token =
+        resolvedTheme === "dark"
+          ? {
+              colorBgContainer: `rgba(20, 20, 20, ${surface})`,
+              colorBgElevated: "rgba(30, 30, 30, 0.88)",
+              colorBgLayout: `rgba(20, 20, 20, ${surface})`,
+            }
+          : {
+              colorBgContainer: `rgba(252, 252, 252, ${surface})`,
+              colorBgElevated: "rgba(255, 255, 255, 0.86)",
+              colorBgLayout: `rgba(252, 252, 252, ${surface})`,
+            };
+    }
+
+    return config;
+  }, [algorithm, glassEnabled, tintAlpha, resolvedTheme]);
 
   /**
    * 接收 Tauri 系统主题变化事件，驱动 `auto` 模式的实际主题。

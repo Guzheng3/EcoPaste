@@ -3,9 +3,10 @@ use tauri::{PhysicalPosition, PhysicalSize, WebviewWindow};
 use crate::core::Result;
 use crate::settings::WindowPosition;
 
-/// 剪贴板窗口的设计默认尺寸（逻辑像素）。运行时按所在屏分辨率 + DPI 自适应缩放，见 [`fit_default_size`]。
-pub(super) const DEFAULT_WINDOW_WIDTH: f64 = 587.0;
-pub(super) const DEFAULT_WINDOW_HEIGHT: f64 = 1055.0;
+/// 剪贴板窗口的设计默认尺寸（逻辑像素，即 CSS 像素，与 tauri.conf.json 保持一致）。
+/// 运行时按所在屏分辨率 + DPI 自适应缩放，见 [`fit_default_size`]。
+pub(super) const DEFAULT_WINDOW_WIDTH: f64 = 360.0;
+pub(super) const DEFAULT_WINDOW_HEIGHT: f64 = 600.0;
 
 /// 自动缩放的屏幕留白（逻辑像素），避免体积紧贴工作区边缘。
 const FIT_MARGIN: f64 = 12.0;
@@ -43,13 +44,13 @@ fn monitor_from_cursor(
     )))
 }
 
-/// 剪贴板窗口尺寸自适应：设计默认 587×1055（逻辑/CSS 像素），按光标所在屏工作区 + DPI
+/// 剪贴板窗口尺寸自适应：设计默认 360×600（逻辑/CSS 像素），按光标所在屏工作区 + DPI
 /// 等比缩放适配，保证完整落在可用区域内（每边留 FIT_MARGIN）。小屏等比缩小，大屏保持
 /// 设计尺寸不放大。
 ///
 /// 关键：`work_size` 与 `position` 是**物理像素**，必须先除以 `scale_factor` 换算到逻辑像素，
 /// 再与设计值比较。直接拿物理工作区除设计值会被 `clamp(0.01, 1.0)` 钳到 1.0，再乘上 `scale`
-/// 就把设计值又放大一遍（典型 DPI 1.5 上 ≈ 819×1490），看起来像窗口没缩放。
+/// 就把设计值又放大一遍（典型 DPI 1.5 上 360×600 会变成 540×900），看起来像窗口没缩放。
 pub fn fit_default_size(window: &WebviewWindow) -> Result<()> {
     let Some((monitor, _)) = monitor_from_cursor(window)? else {
         return Ok(());

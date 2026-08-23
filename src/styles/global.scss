@@ -19,35 +19,34 @@ html {
 }
 
 /**
- * 毛玻璃（Acrylic）—— 完整复刻 TieZ（tiez-clipboard）的双层观感：
+ * 毛玻璃（Acrylic）—— 复刻 TieZ（tiez-clipboard）的双层观感：
  *
  * 1. Rust 侧 window-vibrancy 挂载系统亚克力材质（真实桌面模糊），见
  *    `src-tauri/src/window/effects.rs`；
- * 2. 前端把窗口根壳（#root）做成玻璃面：半透明底 + `backdrop-filter` 模糊下方渐变层 +
- *    圆角玻璃边框 + 高光渐变层，antd 容器背景同步换成半透明以透出玻璃。
+ * 2. 前端把窗口根壳（#root）做成玻璃面：圆角玻璃边框 + backdrop-filter 模糊下方
+ *    渐变层 + 高光渐变层。
  *
- * 亮 / 暗两套配色分别套用。浮层（Modal / Popover）走 `colorBgElevated`，保持较实体可读。
+ * 玻璃面的半透明底色（antd colorBgContainer / colorBgLayout）由 `useAppTheme` 通过
+ * `theme.token` 注入——antd v6 的组件级 CSS 变量（`.css-var-xxx`）会遮蔽 html 级
+ * `--ant-*` 覆盖，在样式表里覆盖变量是无效的。
  *
- * 透光度（`--glass-tint-alpha`）与模糊度（`--glass-blur`）由 `App.tsx` 监听设置变化
- * 实时写入 `<html style>`，用户改 slider 时不需要重新构建。
- * 默认值（透光度 50 / 模糊度 50）也在此处提供，作为 CSS 变量未设置时的兜底。
+ * 模糊度（`--glass-blur`）由 `App.tsx` 监听设置变化实时写入 `<html style>`。
+ * 本选择器组仅在挂了系统材质的窗口生效（App.tsx 只对 clipboard / preview 加
+ * `vibrancy-acrylic` 类），右键菜单等独立窗口保持实色背景。
  */
 :root {
-  --glass-tint-alpha: 0.5;
   --glass-blur: 18px;
   --glass-saturate: 150%;
-  --glass-highlight: 0.22;
-  --glass-highlight-2: 0.12;
+  --glass-highlight: 0.1;
+  --glass-highlight-2: 0.06;
 }
 
 html.vibrancy-acrylic body {
   background-color: transparent;
 }
 
-/* 窗口根壳：圆角玻璃边框 + 背景模糊 + 高光渐变层。
-   排除 `copied` 复制成功小气泡：它是独立透明窗，玻璃壳自带胶囊样式，不应被外层
-   圆角 + 边框 + 阴影包住。 */
-html.vibrancy-acrylic #root:not(.copied-root) {
+/* 窗口根壳：圆角玻璃边框 + 背景模糊 + 高光渐变层。 */
+html.vibrancy-acrylic #root {
   position: relative;
   isolation: isolate;
   overflow: hidden;
@@ -58,56 +57,39 @@ html.vibrancy-acrylic #root:not(.copied-root) {
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
 }
 
-html.vibrancy-acrylic #root:not(.copied-root)::before {
+html.vibrancy-acrylic #root::before {
   content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
   border-radius: inherit;
   background:
-    radial-gradient(140% 110% at 0% 0%, rgba(255, 255, 255, var(--glass-highlight)) 0%, rgba(255, 255, 255, 0.03) 60%, transparent 100%),
-    linear-gradient(145deg, rgba(255, 255, 255, var(--glass-highlight-2)) 0%, rgba(255, 255, 255, 0.02) 100%);
+    radial-gradient(140% 110% at 0% 0%, rgba(255, 255, 255, var(--glass-highlight)) 0%, rgba(255, 255, 255, 0.02) 60%, transparent 100%),
+    linear-gradient(145deg, rgba(255, 255, 255, var(--glass-highlight-2)) 0%, rgba(255, 255, 255, 0.01) 100%);
 }
 
-html.vibrancy-acrylic #root:not(.copied-root) > * {
+html.vibrancy-acrylic #root > * {
   position: relative;
   z-index: 1;
 }
 
-html.vibrancy-acrylic:not(.dark) {
-  /* 浅色底面，供 backdrop-filter 模糊 */
-  body {
-    background:
-      radial-gradient(120% 120% at 8% 8%, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0.08) 52%, rgba(255, 255, 255, 0.02) 100%),
-      linear-gradient(160deg, rgba(170, 190, 220, 0.12) 0%, rgba(210, 220, 236, 0.06) 45%, rgba(180, 195, 215, 0.11) 100%);
-  }
-
-  --ant-color-bg-container: rgba(252, 252, 252, var(--glass-tint-alpha));
-  --ant-color-bg-layout: rgba(252, 252, 252, var(--glass-tint-alpha));
-  --ant-color-bg-elevated: rgba(255, 255, 255, 0.82);
+/* 淡渐变底面：供 #root 的 backdrop-filter 模糊出玻璃层次。刻意保持极淡，
+   真实模糊来自系统亚克力，层叠过厚会"看不见毛玻璃"。 */
+html.vibrancy-acrylic:not(.dark) body {
+  background:
+    radial-gradient(120% 120% at 8% 8%, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.04) 52%, rgba(255, 255, 255, 0.01) 100%),
+    linear-gradient(160deg, rgba(170, 190, 220, 0.06) 0%, rgba(210, 220, 236, 0.03) 45%, rgba(180, 195, 215, 0.05) 100%);
 }
 
-html.vibrancy-acrylic.dark {
-  body {
-    background:
-      radial-gradient(120% 120% at 10% 8%, rgba(120, 138, 164, 0.2) 0%, rgba(74, 86, 108, 0.08) 48%, rgba(48, 56, 72, 0.18) 100%),
-      linear-gradient(150deg, rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0.07) 100%);
-  }
+html.vibrancy-acrylic.dark body {
+  background:
+    radial-gradient(120% 120% at 10% 8%, rgba(120, 138, 164, 0.08) 0%, rgba(74, 86, 108, 0.03) 48%, rgba(48, 56, 72, 0.07) 100%),
+    linear-gradient(150deg, rgba(255, 255, 255, 0.01) 0%, rgba(255, 255, 255, 0.03) 100%);
+}
 
-  --ant-color-bg-container: rgba(20, 20, 20, var(--glass-tint-alpha));
-  --ant-color-bg-layout: rgba(20, 20, 20, var(--glass-tint-alpha));
-  --ant-color-bg-elevated: rgba(30, 30, 30, 0.86);
-
-  #root:not(.copied-root) {
-    border-color: rgba(255, 255, 255, 0.12);
-    box-shadow: 0 10px 38px rgba(0, 0, 0, 0.32);
-  }
-
-  #root:not(.copied-root)::before {
-    background:
-      radial-gradient(140% 120% at 0% 0%, rgba(255, 255, 255, 0.09) 0%, rgba(255, 255, 255, 0.02) 55%, transparent 100%),
-      linear-gradient(160deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.01) 100%);
-  }
+html.vibrancy-acrylic.dark #root {
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 10px 38px rgba(0, 0, 0, 0.32);
 }
 
 /* 主列表虚拟滚动：默认 OS 滚动条在右侧会露出一条灰条（用户报"丑滑块"）。
@@ -132,28 +114,19 @@ html.vibrancy-acrylic .os-scrollbar-handle {
   --os-transition-function: ease;
 }
 
-/* 复制的「已复制」小气泡：底部居中、自身带玻璃胶囊，与主窗口 #root 玻璃壳互不干扰。 */
-html.vibrancy-acrylic .copied-toast {
-  position: relative;
+/* 「复制成功」小气泡：实心绿色胶囊 + 白色对勾，不用毛玻璃，显眼直观。
+   独立透明窗（copied）渲染，样式不带 vibrancy 前缀。 */
+.copied-toast {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
+  gap: 7px;
+  padding: 8px 16px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  background: rgba(255, 255, 255, 0.72);
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.18);
-  backdrop-filter: blur(14px) saturate(160%);
-  -webkit-backdrop-filter: blur(14px) saturate(160%);
-  color: var(--ant-color-text);
-  font-size: 12px;
+  background: #16a34a;
+  box-shadow: 0 6px 20px rgba(22, 163, 74, 0.4);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
   line-height: 1;
   user-select: none;
-}
-
-html.vibrancy-acrylic.dark .copied-toast {
-  border-color: rgba(255, 255, 255, 0.18);
-  background: rgba(30, 30, 30, 0.62);
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
-  color: rgba(255, 255, 255, 0.92);
 }
