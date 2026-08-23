@@ -84,19 +84,22 @@ const ClipboardCard: FC<ClipboardCardProps> = (props) => {
   const body = renderBody(item, isLinkActive, onOpenLink);
   const showSensitiveIndicator = item.isSensitive && item.kind === "text";
   const showStatusIndicators = item.isPinned || showSensitiveIndicator;
-  const sourceAppIcon = sourceAppId ? (
-    <AssetImage
-      alt={sourceAppName}
-      className="size-4"
-      src={sourceAppIconPath}
-    />
-  ) : (
-    <img
-      alt="EcoPaste"
-      className="pointer-events-none size-4"
-      src={isMac ? "/logo-mac.png" : "/logo.png"}
-    />
-  );
+  // 来源图标固定尺寸不参与 flex 收缩（空间不足时先截断名称，图标不变形）；
+  // 图标路径缺失（提取失败）时回落到应用 logo，避免图标整个消失。
+  const sourceAppIcon =
+    sourceAppId && sourceAppIconPath ? (
+      <AssetImage
+        alt={sourceAppName}
+        className="size-4 shrink-0"
+        src={sourceAppIconPath}
+      />
+    ) : (
+      <img
+        alt="EcoPaste"
+        className="pointer-events-none size-4 shrink-0"
+        src={isMac ? "/logo-mac.png" : "/logo.png"}
+      />
+    );
 
   const handleDragStart = async (event: DragEvent) => {
     event.preventDefault();
@@ -167,7 +170,9 @@ const ClipboardCard: FC<ClipboardCardProps> = (props) => {
 
           {sourceAppName ? (
             <>
-              <span className="truncate">{sourceAppName}</span>
+              <span className="truncate" title={sourceAppName}>
+                {sourceAppName}
+              </span>
               <span className="shrink-0 text-ant-quaternary">{typeLabel}</span>
             </>
           ) : (

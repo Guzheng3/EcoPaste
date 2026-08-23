@@ -110,7 +110,7 @@ const KeyHint: FC<KeyHintProps> = (props) => {
   });
 
   return (
-    <div className="relative">
+    <div className="relative shrink-0">
       <div
         className={cn("flex items-center justify-center", {
           "opacity-0": active,
