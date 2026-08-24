@@ -10,7 +10,7 @@
 //! 隐藏后经 keepalive 保活，超时销毁 WebView 释放内存，下次 show 时重建。
 
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::LazyLock;
+use std::sync::{LazyLock, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -40,6 +40,8 @@ static NEXT_SLOT: AtomicUsize = AtomicUsize::new(0);
 /// 每个 slot 的保活销毁纪元：show 时递增，使其间在途的销毁计时失效，避免误毁刚复用的窗口。
 static SLOT_EPOCHS: LazyLock<Vec<AtomicU64>> =
     LazyLock::new(|| (0..MAX_STACK).map(|_| AtomicU64::new(0)).collect());
+/// 当前可见气泡的有序栈（从底到顶），用于动态重排：低位消失后高位自动下移。
+static VISIBLE_STACK: LazyLock<Mutex<Vec<usize>>> = LazyLock::new(|| Mutex::new(Vec::new()));
 
 fn slot_label(slot: usize) -> String {
     format!("copied-dup-{slot}")
@@ -74,6 +76,46 @@ fn ensure_window(app: &AppHandle, slot: usize) -> Result<()> {
     Ok(())
 }
 
+/// 按当前可见栈顺序重排所有可见气泡：index 0 贴底，index 越大越靠上。
+fn reposition_all(app: &AppHandle) {
+    let visible = match VISIBLE_STACK.lock() {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+
+    let monitor = app
+        .get_webview_window(crate::window::CLIPBOARD_WINDOW_LABEL)
+        .and_then(|w| w.current_monitor().ok().flatten())
+        .or_else(|| app.primary_monitor().ok().flatten());
+
+    let Some(mon) = monitor else {
+        return;
+    };
+
+    let mon_pos = *mon.position();
+    let mon_size = *mon.size();
+
+    for (i, &slot) in visible.iter().enumerate() {
+        let label = slot_label(slot);
+        let Some(window) = app.get_webview_window(&label) else {
+            continue;
+        };
+        let scale = window.scale_factor().unwrap_or(1.0);
+        let Ok(win_size) = window.inner_size() else {
+            continue;
+        };
+        let bottom_margin = (SCREEN_BOTTOM_MARGIN * scale) as i32;
+        let stack_offset = (i as f64 * (WINDOW_HEIGHT + STACK_GAP) * scale) as i32;
+
+        let x = mon_pos.x + (mon_size.width as i32 - win_size.width as i32) / 2;
+        let y = mon_pos.y + mon_size.height as i32
+            - win_size.height as i32
+            - bottom_margin
+            - stack_offset;
+        let _ = window.set_position(PhysicalPosition::new(x, y));
+    }
+}
+
 /// 分配并显示一个新「已复制」气泡。被剪贴板监听在「去重命中」时调用；失败仅记日志。
 pub fn show(app: &AppHandle) {
     let slot = NEXT_SLOT.fetch_add(1, Ordering::Relaxed) % MAX_STACK;
@@ -92,32 +134,27 @@ fn show_inner(app: &AppHandle, slot: usize) -> Result<()> {
         .get_webview_window(&label)
         .ok_or_else(|| AppError::Other(anyhow::anyhow!("copied-dup window missing")))?;
 
-    // 底部居中定位，并依据 slot 向上堆叠：slot0 最贴近底部基准，slot 越大越靠上。
-    let monitor = app
-        .get_webview_window(crate::window::CLIPBOARD_WINDOW_LABEL)
-        .and_then(|w| w.current_monitor().ok().flatten())
-        .or_else(|| app.primary_monitor().ok().flatten());
-
-    if let Some(mon) = monitor {
-        let scale = window.scale_factor().unwrap_or(1.0);
-        let mon_pos = *mon.position();
-        let mon_size = *mon.size();
-        let win_size = window
-            .inner_size()
-            .map_err(|e| AppError::Other(anyhow::anyhow!(e)))?;
-        let bottom_margin = (SCREEN_BOTTOM_MARGIN * scale) as i32;
-        let stack_offset = (slot as f64 * (WINDOW_HEIGHT + STACK_GAP) * scale) as i32;
-
-        let x = mon_pos.x + (mon_size.width as i32 - win_size.width as i32) / 2;
-        // 基准贴底部；slot 越大越往上移。
-        let y = mon_pos.y + mon_size.height as i32
-            - win_size.height as i32
-            - bottom_margin
-            - stack_offset;
-        window
-            .set_position(PhysicalPosition::new(x, y))
-            .map_err(|err| AppError::Other(anyhow::anyhow!("copied-dup toast position: {err}")))?;
+    // 加入可见栈：若该 slot 已在栈中（复用旧窗口），先移除再追加到顶部。
+    {
+        let mut visible = VISIBLE_STACK.lock().map_err(|e| {
+            AppError::Other(anyhow::anyhow!("copied-dup visible stack poisoned: {e}"))
+        })?;
+        visible.retain(|&s| s != slot);
+        visible.push(slot);
+        if visible.len() > MAX_STACK {
+            // 挤出最旧的（栈底），防止溢出
+            let popped = visible.remove(0);
+            if let Some(w) = app.get_webview_window(&slot_label(popped)) {
+                if w.is_visible().unwrap_or(false) {
+                    let _ = w.hide();
+                    lifecycle::on_hidden(app, &slot_label(popped), "overflow");
+                    schedule_keepalive_destroy(app, &slot_label(popped));
+                }
+            }
+        }
     }
+
+    reposition_all(app);
 
     window
         .show()
@@ -136,9 +173,7 @@ fn show_inner(app: &AppHandle, slot: usize) -> Result<()> {
         tokio::time::sleep(HIDE_FALLBACK_AFTER).await;
         if let Some(w) = app.get_webview_window(&label) {
             if w.is_visible().unwrap_or(false) {
-                let _ = w.hide();
-                lifecycle::on_hidden(&app, &label, "fallback");
-                schedule_keepalive_destroy(&app, &label);
+                hide_inner(&app, &label);
             }
         }
     });
@@ -146,21 +181,31 @@ fn show_inner(app: &AppHandle, slot: usize) -> Result<()> {
     Ok(())
 }
 
+/// 隐藏指定 slot 的气泡，从可见栈中移除并重排剩余气泡。
+fn hide_inner(app: &AppHandle, label: &str) {
+    // 从可见栈中移除
+    if let Some(slot_str) = label.strip_prefix("copied-dup-") {
+        if let Ok(slot) = slot_str.parse::<usize>() {
+            if let Ok(mut visible) = VISIBLE_STACK.lock() {
+                visible.retain(|&s| s != slot);
+            }
+        }
+    }
+
+    if let Some(window) = app.get_webview_window(label) {
+        let _ = window.hide();
+    }
+    lifecycle::on_hidden(app, label, "frontend");
+    schedule_keepalive_destroy(app, label);
+
+    // 重排剩余可见气泡，让高位下移填空
+    reposition_all(app);
+}
+
 /// 前端动画（淡出）结束后调用，按 label 隐藏对应气泡窗。
 #[tauri::command]
 pub fn hide_copied_dup_toast(app: AppHandle, label: String) {
-    let hidden = app
-        .get_webview_window(&label)
-        .map(|window| {
-            let visible = window.is_visible().unwrap_or(false);
-            let _ = window.hide();
-            visible
-        })
-        .unwrap_or(false);
-    lifecycle::on_hidden(&app, &label, "frontend");
-    if hidden {
-        schedule_keepalive_destroy(&app, &label);
-    }
+    hide_inner(&app, &label);
 }
 
 /// 启动隐藏后的保活销毁：保活 `KEEPALIVE_MS` 后，若窗口仍隐藏且期间未被再次 show
