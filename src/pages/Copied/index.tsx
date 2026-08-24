@@ -125,7 +125,7 @@ const COPED_CSS = `
 
  .copied-toast {
    display: inline-flex; align-items: center; gap: 10px;
-   padding: 8px 18px 8px 10px; border-radius: 9999px;
+   padding: 8px 18px 8px 10px; border-radius: 10px;
    background: var(--copied-bg);
    box-shadow: var(--copied-shadow);
    font-size: 14px; line-height: 1; font-weight: 700; color: var(--copied-text);

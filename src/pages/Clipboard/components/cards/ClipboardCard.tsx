@@ -173,14 +173,15 @@ const ClipboardCard: FC<ClipboardCardProps> = (props) => {
 
           {sourceAppName ? (
             <>
-              {/* 来源名占满剩余空间且不被压缩（只自身截断）；类型标签固定不参与收缩，空间不足时被父容器裁掉，保证来源名完整。 */}
+              {/* 来源名：完整显示，永不被压缩截断。 */}
               <span
-                className="min-w-0 shrink-0 flex-grow basis-0 truncate"
+                className="shrink-0 whitespace-nowrap"
                 title={sourceAppName}
               >
                 {sourceAppName}
               </span>
-              <span className="shrink-0 truncate text-ant-quaternary">
+              {/* 类型标签：空间紧张时自动收缩并省略，父容器 overflow-hidden 兜底裁掉。 */}
+              <span className="min-w-0 truncate text-ant-quaternary">
                 {typeLabel}
               </span>
             </>
