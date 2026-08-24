@@ -16,7 +16,7 @@ import { useTauriListen } from "@/hooks/useTauriListen";
  *    `hide_copied_toast` 让后端隐藏窗口。
  */
 const Copied: FC = () => {
-  const { t, i18n } = useTranslation("commands");
+  const { t } = useTranslation("commands");
 
   const [phase, setPhase] = useState<"enter" | "showing" | "exit">("enter");
   /** 单调递增的播放序号，用于让过期的「重播」回调自失效。 */
@@ -74,13 +74,10 @@ const Copied: FC = () => {
     play(++seqRef.current);
   });
 
-  // i18n 初始化是异步的：此窗口常驻复用、语言不变则不会触发语言切换重渲染，
-  // 首帧若在 init 完成前渲染，`t` 会回退返回 key（"copied"）并保持下去。
-  // init 完成后 react-i18next 会重渲染本组件，届时 `t` 返回真实翻译（中文/英文）。
-  if (!i18n.isInitialized) {
-    return null;
-  }
-
+  // 不再守卫 i18n.isInitialized——窗口在 keepalive 过期后会被销毁重建，
+  // 新 WebView 的 i18n 初始化需要时间，若此时 return null 会导致 useMount 的
+  // play() 在不可见状态下跑完动画，窗口被提前隐藏。
+  // t() 已提供 defaultValue 兜底，无需阻断渲染。
   return (
     <div className="h-screen w-screen overflow-hidden">
       <style>{COPED_CSS}</style>
@@ -113,8 +110,9 @@ const COPED_CSS = `
   --copied-text: #3f3f46;
   --copied-shadow: 0 8px 24px rgb(22 163 74 / 0.18);
 }
- html, body {
+ html, body, #root {
    margin: 0; padding: 0;
+   width: 100%; height: 100%;
    overflow: hidden;
    background: transparent;
  }
