@@ -108,28 +108,31 @@ const Copied: FC = () => {
 /** 动画关键帧与视觉样式，与演示稿保持一致（半透明胶囊 + 描边圆/勾 + 平滑绿光晕）。 */
 const COPED_CSS = `
  :root {
-   --copied-success: #22c55e;
-   --copied-bg: rgb(255 255 255 / 0.95);
-   --copied-text: #3f3f46;
-   --copied-shadow: 0 8px 24px rgb(22 163 74 / 0.18);
- }
+  --copied-success: #22c55e;
+  --copied-bg: rgb(255 255 255 / 0.98);
+  --copied-text: #3f3f46;
+  --copied-shadow: 0 8px 24px rgb(22 163 74 / 0.18);
+}
  html, body {
    margin: 0; padding: 0;
    overflow: hidden;
    background: transparent;
  }
  html.dark {
-   --copied-bg: rgb(20 24 22 / 0.92);
+   --copied-bg: rgb(20 24 22 / 0.98);
    --copied-text: #dcfce7;
  }
 
  .copied-toast {
-   display: inline-flex; align-items: center; gap: 10px;
-   padding: 8px 18px 8px 10px; border-radius: 10px;
-   background: var(--copied-bg);
-   box-shadow: var(--copied-shadow);
-   font-size: 14px; line-height: 1; font-weight: 700; color: var(--copied-text);
- }
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 8px 18px 8px 10px; border-radius: 10px;
+  background: var(--copied-bg);
+  box-shadow: var(--copied-shadow);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: none; outline: none;
+  font-size: 14px; line-height: 1; font-weight: 700; color: var(--copied-text);
+}
  .copied-toast { opacity: 0; transform: scale(.6) translateY(8px); }
 
  /* 入场：出现 + 绿色光晕柔和扩散再收敛（forwards 保持到淡出） */
