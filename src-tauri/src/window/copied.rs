@@ -20,11 +20,11 @@ use crate::window::lifecycle;
 
 pub const COPIED_WINDOW_LABEL: &str = "copied";
 
-/// 卡片尺寸（logical px），前端 `/copied` 页 CSS 与其保持一致。
-const WINDOW_WIDTH: f64 = 168.0;
-/// 高度需容纳图标 30px + 胶囊上下 padding 8×2 = 46px，再加余量以免内容高于窗口
-/// 触发 WebView2 边缘滚动条；同时前端已置 `overflow:hidden` 双保险。
-const WINDOW_HEIGHT: f64 = 52.0;
+/// 窗口尺寸紧贴内容实际大小：图标30 + gap10 + 文字~56 + padding(10+18) = 124px，
+/// 留2px余量给抗锯齿。高度: padding(8+8) + 图标30 = 46px，留2px余量。
+/// 透明窗口中内容边缘=窗口边缘，消除半透明伪影"边框"。
+const WINDOW_WIDTH: f64 = 128.0;
+const WINDOW_HEIGHT: f64 = 48.0;
 /// 距屏幕底部的留白（logical px）。底部居中显示。
 const SCREEN_BOTTOM_MARGIN: f64 = 56.0;
 /// show 时广播给前端、通知其重播动画的事件。
