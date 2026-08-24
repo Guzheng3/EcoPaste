@@ -75,7 +75,7 @@ const Copied: FC = () => {
   });
 
   return (
-    <div className="flex h-screen w-screen items-center justify-center">
+    <div className="flex h-screen w-screen items-center justify-center overflow-hidden">
       <style>{COPED_CSS}</style>
       <div className="contents" key={replayKey}>
         <div className={`copied-toast copied-toast--${phase}`}>
@@ -104,6 +104,11 @@ const COPED_CSS = `
    --copied-bg: rgb(255 255 255 / 0.95);
    --copied-text: #3f3f46;
    --copied-shadow: 0 6px 24px rgb(22 163 74 / 0.22), 0 1px 2px rgb(0 0 0 / 0.06);
+ }
+ html, body {
+   margin: 0; padding: 0;
+   overflow: hidden;
+   background: transparent;
  }
  html.dark {
    --copied-border: rgb(34 197 94 / 0.45);
