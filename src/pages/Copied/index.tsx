@@ -111,7 +111,7 @@ const COPED_CSS = `
    --copied-success: #22c55e;
    --copied-bg: rgb(255 255 255 / 0.95);
    --copied-text: #3f3f46;
-   --copied-shadow: 0 6px 24px rgb(22 163 74 / 0.22), 0 1px 2px rgb(0 0 0 / 0.06);
+   --copied-shadow: 0 8px 24px rgb(22 163 74 / 0.18);
  }
  html, body {
    margin: 0; padding: 0;
