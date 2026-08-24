@@ -16,7 +16,7 @@ import { useTauriListen } from "@/hooks/useTauriListen";
  *    `hide_copied_toast` 让后端隐藏窗口。
  */
 const Copied: FC = () => {
-  const { t } = useTranslation("commands");
+  const { t, i18n } = useTranslation("commands");
 
   const [phase, setPhase] = useState<"enter" | "showing" | "exit">("enter");
   /** 单调递增的播放序号，用于让过期的「重播」回调自失效。 */
@@ -74,6 +74,13 @@ const Copied: FC = () => {
     play(++seqRef.current);
   });
 
+  // i18n 初始化是异步的：此窗口常驻复用、语言不变则不会触发语言切换重渲染，
+  // 首帧若在 init 完成前渲染，`t` 会回退返回 key（"copied"）并保持下去。
+  // init 完成后 react-i18next 会重渲染本组件，届时 `t` 返回真实翻译（中文/英文）。
+  if (!i18n.isInitialized) {
+    return null;
+  }
+
   return (
     <div className="flex h-screen w-screen items-center justify-center overflow-hidden">
       <style>{COPED_CSS}</style>
@@ -89,7 +96,9 @@ const Copied: FC = () => {
             />
             <path className="copied-line" d="M7 12.6 L10.8 16.4 L17 8.5" />
           </svg>
-          <span className="copied-text">{t("copied")}</span>
+          <span className="copied-text">
+            {t("copied", { defaultValue: "复制成功" })}
+          </span>
         </div>
       </div>
     </div>
