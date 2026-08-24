@@ -1,13 +1,19 @@
-//! 复制成功小气泡窗口：复制出新内容时在屏幕右下角弹一个极小的置顶提示窗，
-//! 1.5s 后自动隐藏。用独立 webview 窗实现，不依赖剪贴板主窗口是否可见（主窗口平时缩到
-//! 托盘，气泡若渲染在它里面就看不见）。
+//! 复制成功小气泡窗口：复制出新内容时在屏幕底部居中弹一个极小的置顶提示窗。
+//! 用独立 webview 窗实现，不依赖剪贴板主窗口是否可见（主窗口平时缩到托盘，气泡若渲染
+//! 在它里面就看不见）。
 //!
 //! 与右键菜单窗（`context_window`）同一套参数：`focusable: false` 不抢前台焦点、
 //! `always_on_top` 保证盖在任意应用上层、`transparent` 只显示圆角卡片。
+//!
+//! 生命周期由前端驱动：本端 show 后广播一次 [`COPIED_PLAY_EVENT`]，前端据此播放
+//! 「出现 → 画圆 → 画勾 → 停留 → 淡出」动画，动画结束后 invoke `hide_copied_toast`
+//! 让本端隐藏窗口；本端另保留一个兜底超时，防止前端异常时窗口残留。
 
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::thread;
 use std::time::Duration;
 
-use tauri::{AppHandle, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
 
 use crate::core::{AppError, Result};
 use crate::window::lifecycle;
@@ -19,8 +25,17 @@ const WINDOW_WIDTH: f64 = 168.0;
 const WINDOW_HEIGHT: f64 = 44.0;
 /// 距屏幕底部的留白（logical px）。底部居中显示。
 const SCREEN_BOTTOM_MARGIN: f64 = 56.0;
-/// 展示时长后自动隐藏。
-const HIDE_AFTER: Duration = Duration::from_millis(1500);
+/// show 时广播给前端、通知其重播动画的事件。
+const COPIED_PLAY_EVENT: &str = "copied://play";
+/// 前端动画失败时的兜底隐藏时长。正常路径前端会在动画结束后主动 invoke 隐藏，
+/// 此值略大于「出现(0.9s)+停留(0.52s)+淡出(0.5s)」的总和，避免打断动画。
+const HIDE_FALLBACK_AFTER: Duration = Duration::from_millis(3000);
+/// 隐藏后的保活（keepalive）时长：此时间内窗口复用、不销毁 WebView；
+/// 超过仍隐藏则销毁 WebView 释放内存，下次 show 时再按需重建。
+const KEEPALIVE_MS: u64 = 131_400; // 131.4s
+/// 每 show 一次自增的纪元。hide 后启动的保活销毁计时捕获当时的纪元，
+/// 若期间又 show（纪元变化）则计时作废，避免误毁刚复用的窗口。
+static COPIED_EPOCH: AtomicU64 = AtomicU64::new(0);
 
 /// 按需建窗。窗口保持 `visible: false`，由 [`show`] 统一 show + 定位；重复调用复用已存在窗口。
 fn ensure_window(app: &AppHandle) -> Result<()> {
@@ -53,6 +68,9 @@ fn ensure_window(app: &AppHandle) -> Result<()> {
 /// 在剪贴板窗口所在显示器（回退主显示器）右下角弹出复制成功提示，1.5s 后自动隐藏。
 /// 被 [`crate::clipboard::watcher`] 在「非去重新入库」时调用。失败仅记日志，不阻断入库。
 pub fn show(app: &AppHandle) {
+    // 每 show 一次自增纪元：使在途的保活销毁计时失效，避免误毁刚复用的窗口。
+    COPIED_EPOCH.fetch_add(1, Ordering::Relaxed);
+
     if let Err(err) = show_inner(app) {
         log::warn!("show copied toast failed: {err}");
     }
@@ -95,15 +113,73 @@ fn show_inner(app: &AppHandle) -> Result<()> {
         .map_err(|err| AppError::Other(anyhow::anyhow!("copied toast show: {err}")))?;
     lifecycle::on_shown(app, COPIED_WINDOW_LABEL);
 
-    // 展示到时后自动隐藏（后端定时，前端不参与生命周期）。
+    // 广播一次「重播动画」。前端在页面加载时会自动播放一遍；首次建窗可能因页面尚未
+    // ready 丢失此事件，由前端 mount 自播兜底，后续复用窗口均能收到并重播。
+    if let Err(err) = app.emit(COPIED_PLAY_EVENT, ()) {
+        log::warn!("emit copied play failed: {err}");
+    }
+
+    // 兜底隐藏：正常路径由前端动画结束后 invoke hide_copied_toast 完成隐藏，
+    // 这里仅防御前端异常导致窗口残留。
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(HIDE_AFTER).await;
+        tokio::time::sleep(HIDE_FALLBACK_AFTER).await;
         if let Some(w) = app.get_webview_window(COPIED_WINDOW_LABEL) {
-            let _ = w.hide();
-            lifecycle::on_hidden(&app, COPIED_WINDOW_LABEL, "auto");
+            if w.is_visible().unwrap_or(false) {
+                let _ = w.hide();
+                lifecycle::on_hidden(&app, COPIED_WINDOW_LABEL, "fallback");
+                schedule_keepalive_destroy(&app);
+            }
         }
     });
 
     Ok(())
+}
+
+/// 前端动画（淡出）结束后调用，隐藏气泡窗。
+#[tauri::command]
+pub fn hide_copied_toast(app: AppHandle) {
+    let hidden = app
+        .get_webview_window(COPIED_WINDOW_LABEL)
+        .map(|window| {
+            let visible = window.is_visible().unwrap_or(false);
+            let _ = window.hide();
+            visible
+        })
+        .unwrap_or(false);
+    lifecycle::on_hidden(&app, COPIED_WINDOW_LABEL, "frontend");
+    if hidden {
+        schedule_keepalive_destroy(&app);
+    }
+}
+
+/// 启动隐藏后的保活销毁：保活 `KEEPALIVE_MS` 后，若窗口仍隐藏且期间未被再次 show
+/// （纪元未变），则销毁 WebView 释放内存，下次 show 时经 [`ensure_window`] 重建。
+fn schedule_keepalive_destroy(app: &AppHandle) {
+    let epoch = COPIED_EPOCH.load(Ordering::Relaxed);
+    let app = app.clone();
+
+    thread::spawn(move || {
+        thread::sleep(Duration::from_millis(KEEPALIVE_MS));
+
+        // 销毁需回到主线程操作窗口句柄。
+        let main_app = app.clone();
+        if let Err(err) = app.run_on_main_thread(move || {
+            // 保活期内又被 show（纪元变化）则放弃本次销毁。
+            if COPIED_EPOCH.load(Ordering::Relaxed) != epoch {
+                return;
+            }
+            let Some(window) = main_app.get_webview_window(COPIED_WINDOW_LABEL) else {
+                return;
+            };
+            if window.is_visible().unwrap_or(true) {
+                return;
+            }
+            if let Err(err) = window.destroy() {
+                log::warn!("keepalive destroy copied window failed: {err}");
+            }
+        }) {
+            log::warn!("keepalive destroy copied window main-thread dispatch failed: {err}");
+        }
+    });
 }
