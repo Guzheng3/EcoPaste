@@ -109,7 +109,6 @@ const Copied: FC = () => {
 const COPED_CSS = `
  :root {
    --copied-success: #22c55e;
-   --copied-border: rgb(22 163 74 / 0.35);
    --copied-bg: rgb(255 255 255 / 0.95);
    --copied-text: #3f3f46;
    --copied-shadow: 0 6px 24px rgb(22 163 74 / 0.22), 0 1px 2px rgb(0 0 0 / 0.06);
@@ -120,7 +119,6 @@ const COPED_CSS = `
    background: transparent;
  }
  html.dark {
-   --copied-border: rgb(34 197 94 / 0.45);
    --copied-bg: rgb(20 24 22 / 0.92);
    --copied-text: #dcfce7;
  }
@@ -128,7 +126,6 @@ const COPED_CSS = `
  .copied-toast {
    display: inline-flex; align-items: center; gap: 10px;
    padding: 8px 18px 8px 10px; border-radius: 9999px;
-   border: 1px solid var(--copied-border);
    background: var(--copied-bg);
    box-shadow: var(--copied-shadow);
    font-size: 14px; line-height: 1; font-weight: 700; color: var(--copied-text);
