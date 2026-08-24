@@ -4,13 +4,16 @@
 //! 连续重复复制时，每次 show 分配一个环形 slot（最多 [`MAX_STACK`] 个），新的气泡叠在
 //! 旧的气泡上方，旧的逐个淡出。
 //!
+//! 堆叠顺序：用全局递增计数器 `SHOW_ORDER` 标记每个气泡的显示顺序。
+//! 数值越大越新，排序后从底到顶排列，旧的消失后上面的自动下移填空。
+//!
 //! 生命周期由前端驱动：show 后广播一次 `copied-dup://play`，前端播放
 //! 「出现 → 画圆 → 画箭头 → 停留 → 淡出」动画，结束后 invoke `hide_copied_dup_toast`
 //! 携带本窗口 label 精确隐藏对应实例；后端另保留兜底超时，防止前端异常时窗口残留。
 //! 隐藏后经 keepalive 保活，超时销毁 WebView 释放内存，下次 show 时重建。
 
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::{LazyLock, Mutex};
+use std::sync::LazyLock;
 use std::thread;
 use std::time::Duration;
 
@@ -40,8 +43,13 @@ static NEXT_SLOT: AtomicUsize = AtomicUsize::new(0);
 /// 每个 slot 的保活销毁纪元：show 时递增，使其间在途的销毁计时失效，避免误毁刚复用的窗口。
 static SLOT_EPOCHS: LazyLock<Vec<AtomicU64>> =
     LazyLock::new(|| (0..MAX_STACK).map(|_| AtomicU64::new(0)).collect());
-/// 当前可见气泡的有序栈（从底到顶），用于动态重排：低位消失后高位自动下移。
-static VISIBLE_STACK: LazyLock<Mutex<Vec<usize>>> = LazyLock::new(|| Mutex::new(Vec::new()));
+
+/// 全局递增的显示序号：每次 show() 递增，分配给对应 slot 作为排序依据。
+/// 数值越大越新，排序后从底到顶排列。
+static SHOW_COUNTER: AtomicU64 = AtomicU64::new(0);
+/// 每个 slot 的显示序号（0 表示从未显示/已隐藏）。
+static SLOT_ORDER: LazyLock<Vec<AtomicU64>> =
+    LazyLock::new(|| (0..MAX_STACK).map(|_| AtomicU64::new(0)).collect());
 
 fn slot_label(slot: usize) -> String {
     format!("copied-dup-{slot}")
@@ -76,12 +84,29 @@ fn ensure_window(app: &AppHandle, slot: usize) -> Result<()> {
     Ok(())
 }
 
-/// 按当前可见栈顺序重排所有可见气泡：index 0 贴底，index 越大越靠上。
+/// 收集当前可见且有顺序号的气泡，按 order 升序（旧→新）返回 slot 列表。
+fn collect_visible_sorted(app: &AppHandle) -> Vec<usize> {
+    let mut visible: Vec<(u64, usize)> = Vec::new();
+    for s in 0..MAX_STACK {
+        let order = SLOT_ORDER[s].load(Ordering::Relaxed);
+        if order == 0 {
+            continue;
+        }
+        let label = slot_label(s);
+        if let Some(w) = app.get_webview_window(&label) {
+            if w.is_visible().unwrap_or(false) {
+                visible.push((order, s));
+            }
+        }
+    }
+    // 按 order 升序：旧（小）→ 新（大）
+    visible.sort_by_key(|(order, _)| *order);
+    visible.into_iter().map(|(_, s)| s).collect()
+}
+
+/// 按可见气泡的显示顺序，从底到顶重排所有气泡位置。
 fn reposition_all(app: &AppHandle) {
-    let visible = match VISIBLE_STACK.lock() {
-        Ok(v) => v,
-        Err(_) => return,
-    };
+    let visible = collect_visible_sorted(app);
 
     let monitor = app
         .get_webview_window(crate::window::CLIPBOARD_WINDOW_LABEL)
@@ -134,32 +159,36 @@ fn show_inner(app: &AppHandle, slot: usize) -> Result<()> {
         .get_webview_window(&label)
         .ok_or_else(|| AppError::Other(anyhow::anyhow!("copied-dup window missing")))?;
 
-    // 加入可见栈：若该 slot 已在栈中（复用旧窗口），先移除再追加到顶部。
+    // 分配新的显示序号
+    let order = SHOW_COUNTER.fetch_add(1, Ordering::Relaxed) + 1;
+    SLOT_ORDER[slot].store(order, Ordering::Relaxed);
+
+    // 如果超出最大堆叠数，挤掉最旧的（order 最小的可见气泡）
     {
-        let mut visible = VISIBLE_STACK.lock().map_err(|e| {
-            AppError::Other(anyhow::anyhow!("copied-dup visible stack poisoned: {e}"))
-        })?;
-        visible.retain(|&s| s != slot);
-        visible.push(slot);
-        if visible.len() > MAX_STACK {
-            // 挤出最旧的（栈底），防止溢出
-            let popped = visible.remove(0);
-            if let Some(w) = app.get_webview_window(&slot_label(popped)) {
-                if w.is_visible().unwrap_or(false) {
-                    let _ = w.hide();
-                    lifecycle::on_hidden(app, &slot_label(popped), "overflow");
-                    schedule_keepalive_destroy(app, &slot_label(popped));
+        let visible = collect_visible_sorted(app);
+        // 当前 slot 已经分配了 order，但还没 show，所以 visible 里不包含它
+        // 如果 visible.len() >= MAX_STACK，需要挤掉一个
+        if visible.len() >= MAX_STACK {
+            if let Some(&oldest) = visible.first() {
+                if let Some(w) = app.get_webview_window(&slot_label(oldest)) {
+                    if w.is_visible().unwrap_or(false) {
+                        let _ = w.hide();
+                        lifecycle::on_hidden(app, &slot_label(oldest), "overflow");
+                        schedule_keepalive_destroy(app, &slot_label(oldest));
+                    }
                 }
+                SLOT_ORDER[oldest].store(0, Ordering::Relaxed);
             }
         }
     }
 
-    reposition_all(app);
-
+    // 先 show 再 reposition：show 后窗口处于可见状态，set_position 能可靠生效
     window
         .show()
         .map_err(|err| AppError::Other(anyhow::anyhow!("copied-dup toast show: {err}")))?;
     lifecycle::on_shown(app, &label);
+
+    reposition_all(app);
 
     // 广播「播放动画」。首次建窗可能因页面未 ready 丢失此事件，由前端 mount 自播兜底。
     if let Err(err) = app.emit(COPIED_DUP_PLAY_EVENT, ()) {
@@ -181,14 +210,11 @@ fn show_inner(app: &AppHandle, slot: usize) -> Result<()> {
     Ok(())
 }
 
-/// 隐藏指定 slot 的气泡，从可见栈中移除并重排剩余气泡。
+/// 隐藏指定 slot 的气泡，清除其序号并重排剩余气泡。
 fn hide_inner(app: &AppHandle, label: &str) {
-    // 从可见栈中移除
     if let Some(slot_str) = label.strip_prefix("copied-dup-") {
         if let Ok(slot) = slot_str.parse::<usize>() {
-            if let Ok(mut visible) = VISIBLE_STACK.lock() {
-                visible.retain(|&s| s != slot);
-            }
+            SLOT_ORDER[slot].store(0, Ordering::Relaxed);
         }
     }
 
