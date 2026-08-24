@@ -118,18 +118,27 @@ pub fn materialize_source(
     app
 }
 
-/// 复制成功反馈：仅当 `add_deduplicated` 为 false（本次是真正新入库，而非同内容重复复制）
-/// 且设置开启 `feedback.copy_sound` 时，在屏幕右下角弹一个独立置顶小窗提示。频率与剪贴板
-/// 事件相当，但只在开关开启且非去重时广播；失败仅记日志，不阻断入库主流程。
+/// 复制反馈分流：按去重结果与设置开关弹不同的气泡。
+/// - 真正新入库（`deduplicated = false`）：开启 `feedback.copy_sound` 时弹绿色「复制成功」。
+/// - 命中重复（`deduplicated = true`，列表已存在且已置顶）：开启 `feedback.copied_dup` 时
+///   弹「已复制」红色气泡；同一内容重复复制会走这一支。
+///   失败仅记日志，不阻断入库主流程。
 fn notify_copy_feedback(app: &AppHandle, deduplicated: bool) {
+    let enabled = |get: fn(&crate::settings::Feedback) -> bool| {
+        app.try_state::<SettingsStore>()
+            .map(|s| get(&s.snapshot().clipboard.feedback))
+            .unwrap_or(false)
+    };
+
     if deduplicated {
+        if !enabled(|f| f.copied_dup) {
+            return;
+        }
+        crate::window::copied_dup::show(app);
         return;
     }
-    let enabled = app
-        .try_state::<SettingsStore>()
-        .map(|s| s.snapshot().clipboard.feedback.copy_sound)
-        .unwrap_or(false);
-    if !enabled {
+
+    if !enabled(|f| f.copy_sound) {
         return;
     }
     crate::window::copied::show(app);

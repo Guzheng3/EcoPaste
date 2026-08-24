@@ -90,6 +90,7 @@
     "clipboardGroupsLayoutSaved": "Group layout saved",
     "clipboardItemsCleared": "Cleared {{count}} records",
     "copied": "Copied successfully",
+    "copiedDup": "Already copied",
     "deleted": "Deleted",
     "favoriteAdded": "Added to favorites",
     "favoriteRemoved": "Removed from favorites",

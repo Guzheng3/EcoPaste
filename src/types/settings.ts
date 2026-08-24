@@ -166,6 +166,7 @@ export interface Preview {
 
 export interface Feedback {
   copySound: boolean;
+  copiedDup: boolean;
 }
 
 export interface Filters {

@@ -2,6 +2,7 @@ import { createHashRouter } from "react-router";
 import Clipboard from "@/pages/Clipboard";
 import ContextMenu, { ContextSubmenu } from "@/pages/ContextMenu";
 import Copied from "@/pages/Copied";
+import CopiedDup from "@/pages/CopiedDup";
 import Onboarding from "@/pages/Onboarding";
 import Preference from "@/pages/Preference";
 import Preview from "@/pages/Preview";
@@ -30,6 +31,10 @@ export const router = createHashRouter([
   {
     Component: Copied,
     path: "/copied",
+  },
+  {
+    Component: CopiedDup,
+    path: "/copied-dup",
   },
   {
     Component: Preview,

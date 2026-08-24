@@ -1,4 +1,5 @@
 pub mod copied;
+pub mod copied_dup;
 pub mod lifecycle;
 pub(super) mod position;
 pub mod preview;

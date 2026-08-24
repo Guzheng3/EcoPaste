@@ -120,6 +120,7 @@ pub fn run() {
             commands::update_clipboard_item_note,
             commands::update_clipboard_item_group,
             window::copied::hide_copied_toast,
+            window::copied_dup::hide_copied_dup_toast,
             commands::open_clipboard_item_link,
             commands::reveal_clipboard_item,
             commands::show_window,
