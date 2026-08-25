@@ -152,10 +152,15 @@ fn show_inner(app: &AppHandle, variant: ToastVariant) -> Result<()> {
     }
 
     // 兜底隐藏：正常路径由前端动画结束后 invoke hide_copied_toast 完成隐藏，
-    // 这里仅防御前端异常导致窗口残留。
+    // 这里仅防御前端异常导致窗口残留。捕获当前 epoch，到点时若 epoch 已变
+    // （说明期间又 show 了一次），则放弃本次隐藏，避免误杀新弹窗。
+    let fallback_epoch = COPIED_EPOCH.load(Ordering::Relaxed);
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(HIDE_FALLBACK_AFTER).await;
+        if COPIED_EPOCH.load(Ordering::Relaxed) != fallback_epoch {
+            return;
+        }
         if let Some(w) = app.get_webview_window(COPIED_WINDOW_LABEL) {
             if w.is_visible().unwrap_or(false) {
                 let _ = w.hide();
