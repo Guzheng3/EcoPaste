@@ -33,6 +33,12 @@ pub enum ToastVariant {
     Duplicate,
 }
 
+/// 播放事件载荷，携带变体信息。
+#[derive(Clone, serde::Serialize)]
+struct PlayPayload {
+    variant: ToastVariant,
+}
+
 pub const COPIED_WINDOW_LABEL: &str = "copied";
 
 /// 窗口尺寸紧贴内容实际大小：图标30 + gap10 + 文字~56 + padding(10+18) = 124px，
@@ -135,7 +141,13 @@ fn show_inner(app: &AppHandle, variant: ToastVariant) -> Result<()> {
 
     // 广播一次「重播动画」。首次建窗可能因页面尚未
     // ready 丢失此事件，由前端 mount 自播兜底，后续复用窗口均能收到并重播。
-    if let Err(err) = app.emit(COPIED_PLAY_EVENT, serde_json::json!({ "variant": variant })) {
+    // 先 show 再 emit：show 后 WebView 处于可见态，前端能可靠接收事件。
+    let variant_str = match variant {
+        ToastVariant::Success => "success",
+        ToastVariant::Duplicate => "duplicate",
+    };
+    log::debug!("copied toast emit: variant={variant_str}");
+    if let Err(err) = app.emit(COPIED_PLAY_EVENT, PlayPayload { variant }) {
         log::warn!("emit copied play failed: {err}");
     }
 
