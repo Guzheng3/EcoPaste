@@ -9,6 +9,13 @@ import { log } from "@/utils/log";
 
 type ToastVariant = "success" | "duplicate";
 
+/** 暴露给 Rust `window.eval` 调用的全局入口。 */
+declare global {
+  interface Window {
+    __playToast?: (variant: ToastVariant) => void;
+  }
+}
+
 interface PlayPayload {
   variant: ToastVariant;
 }
@@ -79,6 +86,11 @@ const Copied: FC = () => {
   };
 
   useMount(() => {
+    // 暴露给后端 `window.eval` 调用的入口。Tauri 事件系统在窗口隐藏→显示
+    // 切换时可能丢失 emit，eval 直接调用可绕过事件系统，保证每次 show 都能触发动画。
+    window.__playToast = (v: ToastVariant) => {
+      play(++seqRef.current, v);
+    };
     play(++seqRef.current, "success");
   });
 

@@ -139,14 +139,20 @@ fn show_inner(app: &AppHandle, variant: ToastVariant) -> Result<()> {
         .map_err(|err| AppError::Other(anyhow::anyhow!("copied toast show: {err}")))?;
     lifecycle::on_shown(app, COPIED_WINDOW_LABEL);
 
-    // 广播「重播动画」：用 window.emit 直接投递给本 WebView，避免全局 emit 在
-    // 窗口隐藏→显示切换时偶发丢事件。首次建窗可能因页面尚未 ready 丢失此事件，
-    // 由前端 mount 自播兜底，后续复用窗口均能可靠收到。
+    // 触发前端播放动画，双通道保证可靠：
+    // 1. eval 直接调用前端挂到 window 的 `__playToast`——绕过事件系统，不依赖
+    //    事件投递（事件系统在窗口隐藏→显示切换时可能丢失 emit，实测收不到）。
+    // 2. emit 广播 `copied://play` 作为兜底（首次建窗时 eval 可能因页面未加载失败，
+    //    由前端 useMount 自播 + 本 emit 双保险）。
     let variant_str = match variant {
         ToastVariant::Success => "success",
         ToastVariant::Duplicate => "duplicate",
     };
-    log::debug!("copied toast emit: variant={variant_str}");
+    log::debug!("copied toast play: variant={variant_str}");
+    let js = format!("window.__playToast && window.__playToast('{variant_str}')");
+    if let Err(err) = window.eval(&js) {
+        log::warn!("eval copied toast play failed: {err}");
+    }
     if let Err(err) = window.emit(COPIED_PLAY_EVENT, PlayPayload { variant }) {
         log::warn!("emit copied play failed: {err}");
     }
