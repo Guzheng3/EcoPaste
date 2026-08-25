@@ -122,7 +122,9 @@ mod windows {
             }
 
             let wide = ptr as *const u16;
-            let max_chars = len as usize / 2 + 1;
+            // VerQueryValueW 对字符串值返回的 len 已是字符数（含或不含 null）。
+            // 不加除以 2，直接以 len 为上限避免截断。
+            let max_chars = len as usize + 1;
             let mut end = 0usize;
             while end < max_chars && *wide.add(end) != 0 {
                 end += 1;

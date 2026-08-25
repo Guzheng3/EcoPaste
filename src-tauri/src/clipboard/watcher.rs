@@ -88,7 +88,11 @@ pub fn materialize_source(
     src: FrontmostApp,
 ) -> ClipboardApp {
     if let Some(reg) = registry {
-        if let Some(cached) = reg.get(&src.id) {
+        if let Some(mut cached) = reg.get(&src.id) {
+            // 缓存命中时仍刷新 name（修复 exe 版本资源 bug 后名称可能变化，
+            // 缓存中的旧名字不应永久保留），保留已有 icon 避免重复抽取。
+            cached.name = src.name;
+            reg.insert_into_cache(cached.clone());
             return cached;
         }
     }
