@@ -118,32 +118,21 @@ pub fn materialize_source(
     app
 }
 
-/// 复制反馈分流：按去重结果与设置开关弹不同的气泡。
-/// - 真正新入库（`deduplicated = false`）：开启 `feedback.copy_sound` 时弹绿色「复制成功」。
-/// - 命中重复（`deduplicated = true`，列表已存在且已置顶）：开启 `feedback.copied_dup` 时
-///   弹「已复制」红色气泡；同一内容重复复制会走这一支。
-///   失败仅记日志，不阻断入库主流程。
-///
-/// TODO(临时诊断): 当前屏蔽绿色「复制成功」，只保留红色「已复制」用于隔离测试，
-/// 验证红色弹窗单独能否正常弹出。确认后恢复绿色分支。
+/// 复制成功反馈：仅当 `add_deduplicated` 为 false（本次是真正新入库，而非同内容重复复制）
+/// 且设置开启 `feedback.copy_sound` 时，在屏幕右下角弹一个独立置顶小窗提示。频率与剪贴板
+/// 事件相当，但只在开关开启且非去重时广播；失败仅记日志，不阻断入库主流程。
 fn notify_copy_feedback(app: &AppHandle, deduplicated: bool) {
-    let enabled = |get: fn(&crate::settings::Feedback) -> bool| {
-        app.try_state::<SettingsStore>()
-            .map(|s| get(&s.snapshot().clipboard.feedback))
-            .unwrap_or(false)
-    };
-
-    use crate::window::copied::ToastVariant;
-
-    // TODO(临时诊断): 屏蔽绿色成功分支，只测试红色。
-    if !deduplicated {
+    if deduplicated {
         return;
     }
-    if !enabled(|f| f.copied_dup) {
+    let enabled = app
+        .try_state::<SettingsStore>()
+        .map(|s| s.snapshot().clipboard.feedback.copy_sound)
+        .unwrap_or(false);
+    if !enabled {
         return;
     }
-
-    crate::window::copied::show(app, ToastVariant::Duplicate);
+    crate::window::copied::show(app);
 }
 
 /// 去重入库 + emit「剪贴板更新」事件。监听回调与 `read_clipboard` 命令共用，

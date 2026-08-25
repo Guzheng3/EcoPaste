@@ -640,17 +640,12 @@ pub enum WindowPosition {
 #[serde(default, rename_all = "camelCase")]
 pub struct Feedback {
     pub copy_sound: bool,
-    /// 重复复制（内容已存在）时的「已复制」气泡提示。默认开启，独立于「复制成功」。
-    pub copied_dup: bool,
 }
 
 impl Default for Feedback {
     fn default() -> Self {
         // 复制成功提示默认开启，与原「复制音效」默认行为一致。
-        Self {
-            copy_sound: true,
-            copied_dup: true,
-        }
+        Self { copy_sound: true }
     }
 }
 

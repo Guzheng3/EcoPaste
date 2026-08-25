@@ -309,10 +309,6 @@
         }
       },
       "copy": {
-        "dup": {
-          "description": "Show a toast when the copied content already exists in clipboard history.",
-          "title": "Duplicate Copy Toast"
-        },
         "extractEntities": {
           "description": "Auto-extract links, email addresses, phone numbers and QQ IDs from text records and show them in a dropdown, with one-click open or fill.",
           "title": "Auto-extract Entities"
@@ -326,7 +322,7 @@
           "title": "Copy as Plain Text by Default"
         },
         "sound": {
-          "description": "Show a small toast in the lower right when new clipboard content is saved to history.",
+          "description": "Show a small toast in the lower right when new clipboard content is saved to history; re-copying the same content does not repeat the toast.",
           "title": "Copy Succeeded Toast"
         },
         "updateOnReuse": {

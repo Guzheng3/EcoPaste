@@ -344,15 +344,6 @@ export const preferenceTabs: PreferenceTab[] = [
               return settings.clipboard.feedback.copySound;
             },
           },
-          {
-            control: { type: "switch" },
-            id: "copy.dup",
-            keywords: ["copy", "dup", "duplicate", "feedback"],
-            path: ["clipboard", "feedback", "copiedDup"],
-            value: (settings) => {
-              return settings.clipboard.feedback.copiedDup;
-            },
-          },
         ],
       },
       {
