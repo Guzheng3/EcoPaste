@@ -161,7 +161,17 @@ pub async fn persist_and_notify(
         }
     }
     let result = upsert_item(pool, &item_to_write).await?;
-    notify_copy_feedback(app, result.deduplicated);
+    // notify_copy_feedback 内部会调用 copied::show → ensure_window，可能触发
+    // WebviewWindowBuilder::build()，必须在主线程执行。
+    // 由 watcher 线程经 async_runtime::spawn 调用，不在主线程，
+    // 故必须通过 run_on_main_thread 投递，否则随机崩溃。
+    let app_handle = app.clone();
+    let dedup = result.deduplicated;
+    if let Err(err) = app_handle.clone().run_on_main_thread(move || {
+        notify_copy_feedback(&app_handle, dedup);
+    }) {
+        log::warn!("dispatch notify_copy_feedback to main thread failed: {err}");
+    }
     if let Err(err) = app.emit(
         CLIPBOARD_UPDATED_EVENT,
         json!({
