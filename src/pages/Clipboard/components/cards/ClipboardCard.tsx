@@ -161,62 +161,39 @@ const ClipboardCard: FC<ClipboardCardProps> = (props) => {
       role="option"
       tabIndex={-1}
     >
-      {sourceAppName ? (
-        <>
-          {/* 第一行：图标 + 类型标签（可省略）+ 右侧操作 */}
-          <div className="flex items-center justify-between text-ant-secondary text-xs">
-            <div className="flex min-w-0 items-center gap-1 overflow-hidden">
-              {hintKey ? (
-                <KeyHint hintKey={hintKey} onKeyPress={onQuickPaste}>
-                  {sourceAppIcon}
-                </KeyHint>
-              ) : (
-                sourceAppIcon
-              )}
-              {/* 类型标签：可收缩省略，不占来源名空间。 */}
-              <span className="min-w-0 truncate text-ant-quaternary">
-                {typeLabel}
+      <div className="flex items-center justify-between text-ant-secondary text-xs">
+        <div className="flex min-w-0 items-center gap-1 overflow-hidden">
+          {hintKey ? (
+            <KeyHint hintKey={hintKey} onKeyPress={onQuickPaste}>
+              {sourceAppIcon}
+            </KeyHint>
+          ) : (
+            sourceAppIcon
+          )}
+
+          {sourceAppName ? (
+            <>
+              {/* 来源名：优先完整显示。空间不足时收缩为省略号（而非被 overflow-hidden
+                  硬裁），悬浮 title 显示全名。 */}
+              <span className="min-w-0 truncate" title={sourceAppName}>
+                {sourceAppName}
               </span>
-            </div>
-
-            <ClipboardQuickActions
-              item={item}
-              labels={quickActionLabels}
-              onQuickAction={onQuickAction}
-              quickActions={quickActions}
-              visible={hovered}
-            />
-          </div>
-          {/* 第二行：来源名独占整卡宽度，完整显示优先；极长时才省略，悬浮 title 全名。 */}
-          <div
-            className="truncate text-ant-secondary text-xs"
-            title={sourceAppName}
-          >
-            {sourceAppName}
-          </div>
-        </>
-      ) : (
-        <div className="flex items-center justify-between text-ant-secondary text-xs">
-          <div className="flex min-w-0 items-center gap-1 overflow-hidden">
-            {hintKey ? (
-              <KeyHint hintKey={hintKey} onKeyPress={onQuickPaste}>
-                {sourceAppIcon}
-              </KeyHint>
-            ) : (
-              sourceAppIcon
-            )}
+              {/* 类型标签：固定宽度不参与收缩，避免挤压来源名；内容通常很短。 */}
+              <span className="shrink-0 text-ant-quaternary">{typeLabel}</span>
+            </>
+          ) : (
             <span className="truncate">{typeLabel}</span>
-          </div>
-
-          <ClipboardQuickActions
-            item={item}
-            labels={quickActionLabels}
-            onQuickAction={onQuickAction}
-            quickActions={quickActions}
-            visible={hovered}
-          />
+          )}
         </div>
-      )}
+
+        <ClipboardQuickActions
+          item={item}
+          labels={quickActionLabels}
+          onQuickAction={onQuickAction}
+          quickActions={quickActions}
+          visible={hovered}
+        />
+      </div>
 
       {item.note ? (
         <NoteContentSwitcher
