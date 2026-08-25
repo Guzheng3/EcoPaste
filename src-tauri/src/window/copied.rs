@@ -29,6 +29,8 @@ use crate::window::lifecycle;
 #[derive(Debug, Clone, Copy, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ToastVariant {
+    // TODO(临时诊断): 绿色被屏蔽后 Success 暂未构造，恢复绿色后移除该 expect。
+    #[expect(dead_code)]
     Success,
     Duplicate,
 }

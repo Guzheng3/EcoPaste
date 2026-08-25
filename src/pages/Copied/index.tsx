@@ -37,7 +37,8 @@ const Copied: FC = () => {
   const { t } = useTranslation("commands");
 
   const [variant, setVariant] = useState<ToastVariant>("success");
-  const [phase, setPhase] = useState<"enter" | "showing" | "exit">("enter");
+  // TODO(临时诊断): 初始 phase 为 exit（透明），避免建窗时无动画残留绿/红色块。
+  const [phase, setPhase] = useState<"enter" | "showing" | "exit">("exit");
   /** 单调递增的播放序号，用于让过期的「重播」回调自失效。 */
   const seqRef = useRef(0);
   const timerRef = useRef<number[]>([]);
@@ -91,7 +92,8 @@ const Copied: FC = () => {
     window.__playToast = (v: ToastVariant) => {
       play(++seqRef.current, v);
     };
-    play(++seqRef.current, "success");
+    // TODO(临时诊断): 不再自播绿色 success，只注册 __playToast，
+    // 用于隔离测试红色「已复制」能否单独正常弹出。确认后恢复 play(++seqRef.current, "success")。
   });
 
   useTauriListen<PlayPayload>("copied://play", (event) => {
