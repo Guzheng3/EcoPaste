@@ -8,8 +8,11 @@
 //! 生命周期由前端驱动：本端 show 后广播一次 [`COPIED_PLAY_EVENT`]，前端据此播放
 //! 「出现 → 画圆 → 画勾 → 停留 → 淡出」动画，动画结束后 invoke `hide_copied_toast`
 //! 让本端隐藏窗口；本端另保留一个兜底超时，防止前端异常时窗口残留。
+//!
+//! 销毁策略：永不销毁（与剪贴板主窗口一致）。隐藏后 13.14s 进入休眠态，仅记录状态，
+//! WebView 实例保留，下次 show 时秒级复用。
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
 use std::time::Duration;
 
@@ -32,12 +35,14 @@ const COPIED_PLAY_EVENT: &str = "copied://play";
 /// 前端动画失败时的兜底隐藏时长。正常路径前端会在动画结束后主动 invoke 隐藏，
 /// 此值略大于「出现(0.9s)+停留(0.52s)+淡出(0.5s)」的总和，避免打断动画。
 const HIDE_FALLBACK_AFTER: Duration = Duration::from_millis(3000);
-/// 隐藏后的保活（keepalive）时长：此时间内窗口复用、不销毁 WebView；
-/// 超过仍隐藏则销毁 WebView 释放内存，下次 show 时再按需重建。
-const KEEPALIVE_MS: u64 = 131_400; // 131.4s
-/// 每 show 一次自增的纪元。hide 后启动的保活销毁计时捕获当时的纪元，
-/// 若期间又 show（纪元变化）则计时作废，避免误毁刚复用的窗口。
+/// 隐藏后进入休眠的时长：与剪贴板主窗口同机制，隐藏 13.14s 后标记为休眠态。
+/// 窗口永不销毁，WebView 实例保留供下次 show 秒级复用。
+const DORMANT_AFTER: Duration = Duration::from_millis(13_140);
+/// 每 show 一次自增的纪元。hide 后启动的休眠计时捕获当时的纪元，
+/// 若期间又 show（纪元变化）则计时作废，避免误标休眠。
 static COPIED_EPOCH: AtomicU64 = AtomicU64::new(0);
+/// 是否处于休眠态（仅用于调试，不影响功能）。
+static COPIED_DORMANT: AtomicBool = AtomicBool::new(false);
 
 /// 按需建窗。窗口保持 `visible: false`，由 [`show`] 统一 show + 定位；重复调用复用已存在窗口。
 fn ensure_window(app: &AppHandle) -> Result<()> {
@@ -70,8 +75,9 @@ fn ensure_window(app: &AppHandle) -> Result<()> {
 /// 在剪贴板窗口所在显示器（回退主显示器）右下角弹出复制成功提示，1.5s 后自动隐藏。
 /// 被 [`crate::clipboard::watcher`] 在「非去重新入库」时调用。失败仅记日志，不阻断入库。
 pub fn show(app: &AppHandle) {
-    // 每 show 一次自增纪元：使在途的保活销毁计时失效，避免误毁刚复用的窗口。
+    // 每 show 一次自增纪元：使在途的休眠计时失效，避免误标为休眠态。
     COPIED_EPOCH.fetch_add(1, Ordering::Relaxed);
+    COPIED_DORMANT.store(false, Ordering::Relaxed);
 
     if let Err(err) = show_inner(app) {
         log::warn!("show copied toast failed: {err}");
@@ -130,7 +136,7 @@ fn show_inner(app: &AppHandle) -> Result<()> {
             if w.is_visible().unwrap_or(false) {
                 let _ = w.hide();
                 lifecycle::on_hidden(&app, COPIED_WINDOW_LABEL, "fallback");
-                schedule_keepalive_destroy(&app);
+                schedule_dormant(&app);
             }
         }
     });
@@ -151,23 +157,23 @@ pub fn hide_copied_toast(app: AppHandle) {
         .unwrap_or(false);
     lifecycle::on_hidden(&app, COPIED_WINDOW_LABEL, "frontend");
     if hidden {
-        schedule_keepalive_destroy(&app);
+        schedule_dormant(&app);
     }
 }
 
-/// 启动隐藏后的保活销毁：保活 `KEEPALIVE_MS` 后，若窗口仍隐藏且期间未被再次 show
-/// （纪元未变），则销毁 WebView 释放内存，下次 show 时经 [`ensure_window`] 重建。
-fn schedule_keepalive_destroy(app: &AppHandle) {
+/// 启动隐藏后的休眠计时：`DORMANT_AFTER` 后，若窗口仍隐藏且期间未被再次 show
+/// （纪元未变），则标记为休眠态。窗口永不销毁，WebView 实例保留供下次秒级复用。
+fn schedule_dormant(app: &AppHandle) {
     let epoch = COPIED_EPOCH.load(Ordering::Relaxed);
     let app = app.clone();
 
     thread::spawn(move || {
-        thread::sleep(Duration::from_millis(KEEPALIVE_MS));
+        thread::sleep(DORMANT_AFTER);
 
-        // 销毁需回到主线程操作窗口句柄。
+        // 查询窗口状态需回主线程操作窗口句柄。
         let main_app = app.clone();
         if let Err(err) = app.run_on_main_thread(move || {
-            // 保活期内又被 show（纪元变化）则放弃本次销毁。
+            // 休眠期内又被 show（纪元变化）则放弃本次标记。
             if COPIED_EPOCH.load(Ordering::Relaxed) != epoch {
                 return;
             }
@@ -177,11 +183,10 @@ fn schedule_keepalive_destroy(app: &AppHandle) {
             if window.is_visible().unwrap_or(true) {
                 return;
             }
-            if let Err(err) = window.destroy() {
-                log::warn!("keepalive destroy copied window failed: {err}");
-            }
+            COPIED_DORMANT.store(true, Ordering::Relaxed);
+            log::debug!("copied toast entered dormant state");
         }) {
-            log::warn!("keepalive destroy copied window main-thread dispatch failed: {err}");
+            log::warn!("copied toast dormant main-thread dispatch failed: {err}");
         }
     });
 }
