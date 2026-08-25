@@ -130,18 +130,21 @@ fn notify_copy_feedback(app: &AppHandle, deduplicated: bool) {
             .unwrap_or(false)
     };
 
-    if deduplicated {
+    use crate::window::copied::ToastVariant;
+
+    let variant = if deduplicated {
         if !enabled(|f| f.copied_dup) {
             return;
         }
-        crate::window::copied_dup::show(app);
-        return;
-    }
+        ToastVariant::Duplicate
+    } else {
+        if !enabled(|f| f.copy_sound) {
+            return;
+        }
+        ToastVariant::Success
+    };
 
-    if !enabled(|f| f.copy_sound) {
-        return;
-    }
-    crate::window::copied::show(app);
+    crate::window::copied::show(app, variant);
 }
 
 /// 去重入库 + emit「剪贴板更新」事件。监听回调与 `read_clipboard` 命令共用，
