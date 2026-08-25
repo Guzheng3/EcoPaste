@@ -173,17 +173,13 @@ const ClipboardCard: FC<ClipboardCardProps> = (props) => {
 
           {sourceAppName ? (
             <>
-              {/* 来源名：完整显示，永不被压缩截断。 */}
-              <span
-                className="shrink-0 whitespace-nowrap"
-                title={sourceAppName}
-              >
+              {/* 来源名：优先完整显示。空间不足时收缩为省略号（而非被 overflow-hidden
+                  硬裁），悬浮 title 显示全名。 */}
+              <span className="min-w-0 truncate" title={sourceAppName}>
                 {sourceAppName}
               </span>
-              {/* 类型标签：空间紧张时自动收缩并省略，父容器 overflow-hidden 兜底裁掉。 */}
-              <span className="min-w-0 truncate text-ant-quaternary">
-                {typeLabel}
-              </span>
+              {/* 类型标签：固定宽度不参与收缩，避免挤压来源名；内容通常很短。 */}
+              <span className="shrink-0 text-ant-quaternary">{typeLabel}</span>
             </>
           ) : (
             <span className="truncate">{typeLabel}</span>
