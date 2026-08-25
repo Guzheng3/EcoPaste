@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useTauriListen } from "@/hooks/useTauriListen";
+import { log } from "@/utils/log";
 
 type ToastVariant = "success" | "duplicate";
 
@@ -82,6 +83,7 @@ const Copied: FC = () => {
   });
 
   useTauriListen<PlayPayload>("copied://play", (event) => {
+    log.debug(`[copied] play event received: variant=${event.payload.variant}`);
     play(++seqRef.current, event.payload.variant);
   });
 

@@ -139,15 +139,15 @@ fn show_inner(app: &AppHandle, variant: ToastVariant) -> Result<()> {
         .map_err(|err| AppError::Other(anyhow::anyhow!("copied toast show: {err}")))?;
     lifecycle::on_shown(app, COPIED_WINDOW_LABEL);
 
-    // 广播一次「重播动画」。首次建窗可能因页面尚未
-    // ready 丢失此事件，由前端 mount 自播兜底，后续复用窗口均能收到并重播。
-    // 先 show 再 emit：show 后 WebView 处于可见态，前端能可靠接收事件。
+    // 广播「重播动画」：用 window.emit 直接投递给本 WebView，避免全局 emit 在
+    // 窗口隐藏→显示切换时偶发丢事件。首次建窗可能因页面尚未 ready 丢失此事件，
+    // 由前端 mount 自播兜底，后续复用窗口均能可靠收到。
     let variant_str = match variant {
         ToastVariant::Success => "success",
         ToastVariant::Duplicate => "duplicate",
     };
     log::debug!("copied toast emit: variant={variant_str}");
-    if let Err(err) = app.emit(COPIED_PLAY_EVENT, PlayPayload { variant }) {
+    if let Err(err) = window.emit(COPIED_PLAY_EVENT, PlayPayload { variant }) {
         log::warn!("emit copied play failed: {err}");
     }
 
