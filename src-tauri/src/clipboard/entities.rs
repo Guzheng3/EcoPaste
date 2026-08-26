@@ -1,4 +1,4 @@
-//! 剪贴板文本内的可交互实体提取：链接 / 邮箱 / 手机号 / QQ 号。
+//! 剪贴板文本内的可交互实体提取：链接（含裸域名） / 邮箱 / 手机号 / QQ 号。
 //!
 //! 与 `secrets` 的「判断是否存在」不同，这里需要给出实体的精确切片并按出现顺序返回，
 //! 用于前端把一条长文本里散落的链接、号码提出来做一键打开 / 键入。
@@ -42,6 +42,7 @@ pub fn extract_entities(text: &str) -> Vec<ExtractedEntity> {
 
     // 链接优先级最高：其域名、端口、路径数字都要占住，避免被后续号码规则拆碎成子串。
     push_matches(value, &mut out, &mut occupied);
+    push_bare_domains(value, &mut out, &mut occupied);
     push_emails(value, &mut out, &mut occupied);
     push_phones(value, &mut out, &mut occupied);
     push_qqs(value, &mut out, &mut occupied);
@@ -58,6 +59,45 @@ fn push_matches(text: &str, out: &mut Vec<ExtractedEntity>, occupied: &mut Vec<(
 
     for m in re.find_iter(text) {
         if overlaps(m.start(), m.end(), occupied) {
+            continue;
+        }
+        let raw = &text[m.start()..m.end()];
+        let end = trim_trailing_punctuation(raw);
+        push_slice(
+            text,
+            out,
+            occupied,
+            EntityKind::Url,
+            &raw[..end],
+            m.start(),
+            m.start() + end,
+        );
+    }
+}
+
+/// 裸域名（无协议）的 TLD 白名单，与 `segment` 的「编辑」提取共用同一份词表。
+/// 只有以白名单后缀结尾的域名才识别为链接，避免把 "e.g."、版本号等普通句子误报。
+pub(crate) const BARE_DOMAIN_TLDS: &str = "com|net|org|edu|gov|cn|io|dev|app|vip|top|club|shop|tech|online|store|site|xyz|info|cc|me|co|link|work|live|cloud|fun|run|world|life|icu|pro|plus|today|email|team|zone|biz|name|tv|fm|blog|wiki|space|press|host|website|agency|digital|media|finance|guru|fit|beauty|hair|skin|makeup|quest|lol|monster|support|systems|tools|design|art|love|news|social|network|company|solutions|services|international|technology|group|careers|photos|pictures|photography|gallery|directory|marketing|consulting|partners|capital|ventures|fund|funding|investments|management|enterprises|academy|education|school|university|institute|foundation|health|healthcare|clinic|hospital|care|doctor|pharmacy|dental|vision|legal|law|attorney|lawyer|insurance|financial|accountant|accountants|tax|loans|credit|mortgage|realestate|properties|property|rentals|apartments|condos|house|homes|land|construction|builders|contractors|architect|engineering|software|hardware|computer|computers|electronics|audio|video|music|film|movie|movies|theater|games|gaming|sport|sports|fitness|gym|yoga|travel|tours|cruises|vacations|flights|hotels|restaurant|restaurants|cafe|coffee|pizza|food|recipes|cooking|wine|beer|fashion|clothing|shoes|watches|jewelry|diamonds|gold|auto|cars|car|motorcycles|boats|bikes|parts|tires|repair|cleaning|plumbing|electric|roofing|pest|lawn|garden|flowers|pets|dog|cat|animals|fish|bird|birds";
+
+/// 提取无协议的裸域名（如 qinghan.vip、video.qinghan.vip），归类为链接。
+/// 左端刻意不用词边界：汉字也算单词字符，`\b` 在中英文交界处不成立，否则 `打开qinghan.vip` 提不出；
+/// 右端要求 `\b`，防止 `com` 之类的 TLD 误配到 `combination` 这类单词内部的前缀。
+/// 邮箱的域名部分（a@b.com 中的 b.com）前一个字符是 `@`，留给邮箱规则处理。
+fn push_bare_domains(
+    text: &str,
+    out: &mut Vec<ExtractedEntity>,
+    occupied: &mut Vec<(usize, usize)>,
+) {
+    static BARE_DOMAIN_RE: OnceLock<Regex> = OnceLock::new();
+    let re = BARE_DOMAIN_RE.get_or_init(|| {
+        let pattern = format!(
+            r#"(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+(?:{BARE_DOMAIN_TLDS})\b(?:/[^\s<>"']*)?"#
+        );
+        Regex::new(&pattern).expect("valid regex")
+    });
+
+    for m in re.find_iter(text) {
+        if text[..m.start()].ends_with('@') || overlaps(m.start(), m.end(), occupied) {
             continue;
         }
         let raw = &text[m.start()..m.end()];
@@ -225,6 +265,33 @@ mod tests {
             vec!["https://example.com/a(b)"]
         );
         assert_eq!(values("访问 www.example.com."), vec!["www.example.com"]);
+    }
+
+    #[test]
+    fn extracts_bare_domains_as_urls() {
+        assert_eq!(
+            values("访问 qinghan.vip 和 video.qinghan.vip"),
+            vec!["qinghan.vip", "video.qinghan.vip"]
+        );
+        // 中文紧邻（无空格）也能提取；路径末尾标点要剥掉。
+        assert_eq!(
+            values("打开qinghan.vip/page, 谢谢"),
+            vec!["qinghan.vip/page"]
+        );
+        assert_eq!(values("去 www.qinghan.vip."), vec!["www.qinghan.vip"]);
+    }
+
+    #[test]
+    fn bare_domain_skips_email_domain_part() {
+        // 邮箱域名部分不产生链接，整条按邮箱提取。
+        assert_eq!(values("联系 a@b.cn 谢谢"), vec!["a@b.cn"]);
+    }
+
+    #[test]
+    fn bare_domain_requires_listed_tld() {
+        // TLD 出现在单词内部前缀时不误报；版本号 / 小数不产生实体。
+        assert!(extract_entities("a.combination v1.2.3").is_empty());
+        assert!(extract_entities("3.14 或 2.5").is_empty());
     }
 
     #[test]

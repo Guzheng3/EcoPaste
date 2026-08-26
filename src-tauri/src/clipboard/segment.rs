@@ -15,16 +15,23 @@ use regex::Regex;
 use serde::Serialize;
 use std::sync::OnceLock;
 
+use super::entities::BARE_DOMAIN_TLDS;
+
 // ---------------------------------------------------------------------------
 // 正则：惰性编译，首次使用后复用
 // ---------------------------------------------------------------------------
 
+/// 提取链接用的正则：两条分支——带协议/www 的完整 URL，以及 TLD 白名单内的裸域名。
+/// 裸域名分支左端刻意不用词边界（汉字也是单词字符，`\b` 在中英文交界处不成立，
+/// 否则 `打开qinghan.vip` 提不出）；右端 TLD 后要求 `\b`，防止 `com` 误配到
+/// `combination` 这类单词内部前缀。路径可选，末尾标点由字符类排除。
 fn link_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
-        Regex::new(
-            r#"(?i)\b(?:(?:https?|ftp)://|www\.)[^\s<>\"\x27)]*[^\s<>\"\x27).,;:!?]|\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+(?:com|net|org|edu|gov|cn|io|dev|app|vip|top|club|shop|tech|online|store|site|xyz|info|cc|me|co|link|work|live|cloud|fun|run|world|life|icu|pro|plus|today|email|team|zone|biz|name|tv|fm|blog|wiki|space|press|host|website|agency|digital|media|finance|guru|fit|beauty|hair|skin|makeup|quest|lol|monster|support|systems|tools|design|art|love|news|social|network|company|solutions|services|international|technology|group|careers|photos|pictures| photography|gallery|directory|marketing|consulting|partners|capital|ventures|fund|funding|investments|management|enterprises|academy|education|school|university|institute|foundation|health|healthcare|clinic|hospital|care|doctor|pharmacy|dental|vision|legal|law|attorney|lawyer|insurance|financial|accountant|accountants|tax|loans|credit|mortgage|realestate|properties|property|rentals|apartments|condos|house|homes|land|construction|builders|contractors|architect|engineering|software|hardware|computer|computers|electronics|audio|video|music|film|movie|movies|theater|games|gaming|sport|sports|fitness|gym|yoga|travel|tours|cruises|vacations|flights|hotels|restaurant|restaurants|cafe|coffee|pizza|food|recipes|cooking|wine|beer|fashion|clothing|shoes|watches|jewelry|diamonds|gold|auto|cars|car|motorcycles|boats|bikes|parts|tires|repair|cleaning|plumbing|electric|roofing|pest|lawn|garden|flowers|pets|dog|cat|animals|fish|bird|birds)(?:/[^\s<>\"\x27)]*[^\s<>\"\x27).,;:!?]|\b[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.[a-zA-Z]{2,})"#
-        ).expect("link regex")
+        let pattern = format!(
+            r#"(?i)\b(?:(?:https?|ftp)://|www\.)[^\s<>\"\x27)]*[^\s<>\"\x27).,;:!?]|(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+(?:{BARE_DOMAIN_TLDS})\b(?:/[^\s<>\"\x27)]*[^\s<>\"\x27).,;:!?])?"#
+        );
+        Regex::new(&pattern).expect("link regex")
     })
 }
 
@@ -54,9 +61,11 @@ fn jieba() -> &'static Jieba {
 // ---------------------------------------------------------------------------
 
 /// 提取所有链接（含协议链接、www 前缀、裸域名）。
+/// 邮箱的域名部分（`a@b.com` 中的 `b.com`）前一个字符是 `@`，留给邮箱规则处理，这里跳过。
 pub fn extract_links(text: &str) -> Vec<String> {
     let mut links: Vec<String> = link_regex()
         .find_iter(text)
+        .filter(|m| !text[..m.start()].ends_with('@'))
         .map(|m| m.as_str().to_owned())
         .collect();
     links.sort();
