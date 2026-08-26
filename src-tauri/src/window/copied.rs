@@ -50,7 +50,7 @@ fn ensure_window(app: &AppHandle) -> Result<()> {
         return Ok(());
     }
 
-    WebviewWindowBuilder::new(
+    let builder = WebviewWindowBuilder::new(
         app,
         COPIED_WINDOW_LABEL,
         WebviewUrl::App("index.html/#/copied".into()),
@@ -64,10 +64,16 @@ fn ensure_window(app: &AppHandle) -> Result<()> {
     .always_on_top(true)
     .focusable(false)
     .visible(false)
-    .skip_taskbar(true)
-    .drag_and_drop(false)
-    .build()
-    .map_err(|err| AppError::Other(anyhow::anyhow!("build copied window: {err}")))?;
+    .skip_taskbar(true);
+
+    // `drag_and_drop` 是 Tauri 的 Windows 专属 API（源码标 `#[cfg(windows)]`），macOS 没有
+    // 对应方法。按平台门控：在 Windows 上禁用文件拖放到气泡窗，同时避免 macOS 编译报错。
+    #[cfg(windows)]
+    let builder = builder.drag_and_drop(false);
+
+    builder
+        .build()
+        .map_err(|err| AppError::Other(anyhow::anyhow!("build copied window: {err}")))?;
 
     Ok(())
 }
