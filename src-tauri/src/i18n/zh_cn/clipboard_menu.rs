@@ -19,6 +19,7 @@ pub fn label(key: Key) -> &'static str {
         Key::MoveToGroup => "移动到分组",
         Key::AddNote => "添加备注",
         Key::EditNote => "编辑备注",
+        Key::Edit => "编辑",
         Key::Delete => "删除",
     }
 }

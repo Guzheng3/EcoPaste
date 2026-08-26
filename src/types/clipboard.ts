@@ -108,6 +108,14 @@ export type ClipboardGroup = "all" | "text" | "image" | "files" | "favorite";
 
 export type ClipboardRange = "all" | "favorite";
 
+export interface SegmentEditResult {
+  text: string;
+  blocks: string[];
+  links: string[];
+  emails: string[];
+  phones: string[];
+}
+
 export type ClipboardCategory = ClipboardKind;
 
 export type ClipboardGroupIcon = string;

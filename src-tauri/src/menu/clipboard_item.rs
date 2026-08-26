@@ -39,6 +39,7 @@ pub enum ClipboardMenuAction {
     TogglePinned,
     MoveToGroup,
     EditNote,
+    SegmentFill,
     Delete,
 }
 
@@ -85,6 +86,7 @@ impl ClipboardMenuAction {
                     Key::AddNote
                 }
             }
+            Self::SegmentFill => Key::Edit,
             Self::Delete => Key::Delete,
         };
 
@@ -105,6 +107,7 @@ impl ClipboardMenuAction {
             Self::TogglePinned => Some("CmdOrCtrl+T"),
             Self::MoveToGroup => None,
             Self::EditNote => Some("CmdOrCtrl+M"),
+            Self::SegmentFill => None,
             Self::Delete => Some("CmdOrCtrl+Backspace"),
         }
     }
@@ -130,6 +133,7 @@ pub(super) const ACTION_GROUPS: &[&[ClipboardMenuAction]] = &[
         ClipboardMenuAction::TogglePinned,
         ClipboardMenuAction::MoveToGroup,
         ClipboardMenuAction::EditNote,
+        ClipboardMenuAction::SegmentFill,
     ],
     &[ClipboardMenuAction::Delete],
 ];
@@ -221,6 +225,7 @@ mod native {
                 Self::TogglePinned => "cim::togglePinned",
                 Self::MoveToGroup => "cim::moveToGroup",
                 Self::EditNote => "cim::editNote",
+                Self::SegmentFill => "cim::segmentFill",
                 Self::Delete => "cim::delete",
             }
         }
@@ -240,6 +245,7 @@ mod native {
                 ClipboardMenuAction::TogglePinned,
                 ClipboardMenuAction::MoveToGroup,
                 ClipboardMenuAction::EditNote,
+                ClipboardMenuAction::SegmentFill,
                 ClipboardMenuAction::Delete,
             ];
             if id.starts_with(MOVE_GROUP_PREFIX) {

@@ -19,6 +19,7 @@ pub fn label(key: Key) -> &'static str {
         Key::MoveToGroup => "Move to Group",
         Key::AddNote => "Add Note",
         Key::EditNote => "Edit Note",
+        Key::Edit => "Edit",
         Key::Delete => "Delete",
     }
 }

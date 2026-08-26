@@ -16,6 +16,7 @@ pub enum ClipboardMenuKey {
     MoveToGroup,
     AddNote,
     EditNote,
+    Edit,
     Delete,
 }
 

@@ -31,7 +31,7 @@ pub use ingest::build_item;
 pub use ingest::{build_item_with_settings, build_item_with_source};
 pub use payload::{ClipboardPayload, ImagePayload, TextPayload};
 pub use read::ClipboardReader;
-pub use segment::segment_text;
+pub use segment::{segment_edit, SegmentEditResult};
 pub use source::{detect_frontmost, init_window_tracking};
 pub use storage::ImageStore;
 pub use watcher::{init, materialize_source, persist_and_notify, WatcherPause};

@@ -80,17 +80,29 @@
     "pinItem": "Pin to Top",
     "pinItemActive": "Unpin from Top",
     "reveal": "Show in File Manager",
-    "segmentFill": "Segment & Fill",
+    "segmentFill": "Edit",
     "sendEmail": "Send Email",
     "star": "Favorite",
     "starActive": "Unfavorite"
   },
   "segmentFill": {
+    "editPlaceholder": "Edit the text to extract blocks in real-time...",
     "empty": "No words to split",
     "fill": "Fill {{count}} word(s)",
-    "hint": "Click words to multi-select disjoint ones; click and drag to box-select a continuous range",
-    "placeholder": "Click or drag to select words; multi-select or swipe a continuous range",
-    "title": "Segment & Fill"
+    "noResults": "No results",
+    "tabs": {
+      "emails": "Emails",
+      "links": "Links",
+      "phones": "Phones",
+      "words": "Words"
+    },
+    "title": "Edit",
+    "toggles": {
+      "emails": "Emails",
+      "links": "Links",
+      "phones": "Phones",
+      "words": "Words"
+    }
   },
   "shortcuts": {
     "closePreviewFilterWindow": "Close preview / filters / window",

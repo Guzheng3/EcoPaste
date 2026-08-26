@@ -22,6 +22,7 @@ import type {
   ClipboardKind,
   ClipboardSubKind,
   ExtractedEntity,
+  SegmentEditResult,
   UpdateNoteResult,
 } from "@/types/clipboard";
 import type { Settings, SettingsPatch } from "@/types/settings";
@@ -919,11 +920,11 @@ export const pasteClipboardItem = (id: string, plain: boolean) => {
 };
 
 /**
- * 按 id 对单条文本记录做中文 / 英文拆词，返回有序词块数组（非文本记录返回空）。
- * 供「拆词填入」弹层多选 / 滑选前获取词块。
+ * 按 id 对单条文本记录做拆词 + 链接/域名/邮箱/手机号提取。
+ * 供「编辑」弹窗获取词块与提取结果。
  */
 export const segmentClipboardItem = (id: string) => {
-  return call<string[]>(
+  return call<SegmentEditResult>(
     TAURI_COMMAND.SEGMENT_CLIPBOARD_ITEM,
     "commands:labels.loadSegment",
     { id },

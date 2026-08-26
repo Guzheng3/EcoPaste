@@ -14,7 +14,7 @@ use tauri_plugin_dialog::DialogExt;
 use crate::clipboard::{
     add_app_from_path, build_item_with_source, delete_unreferenced_apps, detect_frontmost,
     extract_entities, materialize_source, persist_and_notify, refresh_running_apps,
-    sanitize_css_color, segment_text, AppIconStore, AppsRegistry, ClipboardReader, ExtractedEntity,
+    sanitize_css_color, segment_edit, AppIconStore, AppsRegistry, ClipboardReader, ExtractedEntity,
     FileIconStore, ImageStore, WritebackGuard,
 };
 use crate::core::{AppError, Result};
@@ -452,25 +452,30 @@ pub async fn paste_clipboard_item(
     Ok(())
 }
 
-/// 拆词（前端「拆词填入」入口）：按 id 读一条文本记录，分词返回有序词块。
-/// 非文本记录直接返回空数组。分词规则见 `crate::clipboard::segment`。
+/// 编辑文本（前端「编辑」弹窗入口）：按 id 读一条文本记录，返回拆词词块、链接、邮箱、手机号。
+/// 非文本记录返回空结果。规则见 `crate::clipboard::segment`。
 #[tauri::command]
 pub async fn segment_clipboard_item(
     db: State<'_, DatabaseState>,
     id: String,
-) -> Result<Vec<String>> {
+) -> Result<crate::clipboard::SegmentEditResult> {
     let pool = db.pool().await;
     let item = find_item_by_id(&pool, &id)
         .await?
         .ok_or_else(|| AppError::Clipboard(format!("clipboard item not found: {id}")))?;
 
     if item.kind != ClipboardKind::Text {
-        return Ok(Vec::new());
+        return Ok(crate::clipboard::SegmentEditResult {
+            text: String::new(),
+            blocks: Vec::new(),
+            links: Vec::new(),
+            emails: Vec::new(),
+            phones: Vec::new(),
+        });
     }
 
-    // 纯文本表示优先（HTML/RTF 记录也能拿到 OS 侧 plain 文本），兜底回退源 `content`。
     let text = item.search_text.clone().unwrap_or(item.content);
-    Ok(segment_text(&text))
+    Ok(segment_edit(&text))
 }
 
 /// 实体提取（前端实体下拉框入口）：按 id 读一条文本记录，返回其中提取的链接 / 邮箱 / 手机号 / QQ。

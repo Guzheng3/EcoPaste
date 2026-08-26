@@ -1,74 +1,122 @@
-import { Modal } from "antd";
+import { Input, Modal, Switch, Tabs } from "antd";
 import type { FC, PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { fillSelectedText, segmentClipboardItem } from "@/commands";
-import type { ClipboardItem } from "@/types/clipboard";
+import type { ClipboardItem, SegmentEditResult } from "@/types/clipboard";
 import { cn } from "@/utils/cn";
 
+const { TextArea } = Input;
+
 interface SegmentFillModalProps {
-  /**
-   * 当前拆词目标；为 null 时关闭。由列表层持有的单例状态注入。
-   */
   item: ClipboardItem | null;
-  /**
-   * 关闭弹窗。
-   */
   onClose: () => void;
 }
 
-/**
- * 「拆词填入」弹窗：对单条文本记录做分词后展示词块流，
- * 支持单击多选不连续词块，或按住并拖动框选连续区间；
- * 已选词块实时预览，点「填入」写剪贴板并模拟粘贴到前台输入框。
- */
+interface BlockItem {
+  id: string;
+  text: string;
+}
+
+type TabKey = "words" | "links" | "emails" | "phones";
+
+const TAB_KEYS: readonly TabKey[] = ["words", "links", "emails", "phones"];
+
 const SegmentFillModal: FC<SegmentFillModalProps> = (props) => {
   const { item, onClose } = props;
   const { t } = useTranslation(["clipboard", "common"]);
 
-  const [blocks, setBlocks] = useState<Array<{ id: string; text: string }>>([]);
+  const [result, setResult] = useState<SegmentEditResult | null>(null);
+  const [editingText, setEditingText] = useState("");
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<ReadonlySet<number>>(new Set());
+  const [activeTab, setActiveTab] = useState<TabKey>("words");
   const [filling, setFilling] = useState(false);
-  // 拖动选择手势状态：anchor 为按下时的索引，base 为按下瞬间的已选快照。
+
+  // 开关状态
+  const [enableWords, setEnableWords] = useState(true);
+  const [enableLinks, setEnableLinks] = useState(true);
+  const [enableEmails, setEnableEmails] = useState(true);
+  const [enablePhones, setEnablePhones] = useState(true);
+
   const dragRef = useRef<{
     anchor: number;
     base: ReadonlySet<number>;
     moved: boolean;
   } | null>(null);
 
+  const itemIdRef = useRef<string | null>(null);
+  itemIdRef.current = item?.id ?? null;
+
+  // 加载数据
   useEffect(() => {
     if (!item) return;
-
     setSelected(new Set());
-    setBlocks([]);
     setLoading(true);
+    setActiveTab("words");
 
     segmentClipboardItem(item.id)
-      .then((words) =>
-        setBlocks(
-          words.map((word, index) => ({
-            id: `${item.id}-${index}`,
-            text: word,
-          })),
-        ),
-      )
+      .then((res) => {
+        setResult(res);
+        setEditingText(res.text);
+      })
       .finally(() => setLoading(false));
   }, [item]);
 
+  // 重新分析：文本变化时自动重新提取
+  // biome-ignore lint/correctness/useExhaustiveDependencies: result deps would cause infinite loop
+  useEffect(() => {
+    if (!result || editingText === result.text) return;
+    const id = itemIdRef.current;
+    if (!id) return;
+    const timer = setTimeout(() => {
+      setSelected(new Set());
+      segmentClipboardItem(id).then((res) => {
+        setResult({ ...res, text: editingText });
+      });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [editingText]);
+
+  // 当前 tab 的词块列表
+  const currentBlocks = useMemo(() => {
+    if (!result) return [];
+    const tabKey = activeTab;
+    let items: string[] = [];
+    switch (tabKey) {
+      case "words":
+        items = enableWords ? result.blocks : [];
+        break;
+      case "links":
+        items = enableLinks ? result.links : [];
+        break;
+      case "emails":
+        items = enableEmails ? result.emails : [];
+        break;
+      case "phones":
+        items = enablePhones ? result.phones : [];
+        break;
+    }
+    return items.map(
+      (text, index): BlockItem => ({
+        id: `${tabKey}-${index}`,
+        text,
+      }),
+    );
+  }, [result, activeTab, enableWords, enableLinks, enableEmails, enablePhones]);
+
   const selectedText = useMemo(() => {
-    return blocks
+    return currentBlocks
       .filter((_, index) => selected.has(index))
       .map((block) => block.text)
       .join(" ");
-  }, [blocks, selected]);
+  }, [currentBlocks, selected]);
 
   const handlePointerDown = (
     event: ReactPointerEvent<HTMLButtonElement>,
     index: number,
   ) => {
     if (event.button !== 0) return;
-
     event.preventDefault();
     dragRef.current = { anchor: index, base: new Set(selected), moved: false };
   };
@@ -79,7 +127,6 @@ const SegmentFillModal: FC<SegmentFillModalProps> = (props) => {
   ) => {
     const drag = dragRef.current;
     if (!drag?.moved) return;
-
     event.preventDefault();
     const lo = Math.min(drag.anchor, index);
     const hi = Math.max(drag.anchor, index);
@@ -91,7 +138,6 @@ const SegmentFillModal: FC<SegmentFillModalProps> = (props) => {
   const handlePointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
     const drag = dragRef.current;
     if (!drag) return;
-
     event.preventDefault();
     drag.moved = true;
   };
@@ -99,7 +145,6 @@ const SegmentFillModal: FC<SegmentFillModalProps> = (props) => {
   const handlePointerUp = (event: ReactPointerEvent<HTMLButtonElement>) => {
     const drag = dragRef.current;
     if (!drag) return;
-
     event.preventDefault();
     if (!drag.moved) {
       setSelected((prev) => {
@@ -114,7 +159,6 @@ const SegmentFillModal: FC<SegmentFillModalProps> = (props) => {
 
   const handleFill = async () => {
     if (!selectedText) return;
-
     setFilling(true);
     try {
       await fillSelectedText(selectedText);
@@ -124,12 +168,63 @@ const SegmentFillModal: FC<SegmentFillModalProps> = (props) => {
     }
   };
 
+  const hasAnyBlocks = TAB_KEYS.some((key) => {
+    if (!result) return false;
+    switch (key) {
+      case "words":
+        return enableWords && result.blocks.length > 0;
+      case "links":
+        return enableLinks && result.links.length > 0;
+      case "emails":
+        return enableEmails && result.emails.length > 0;
+      case "phones":
+        return enablePhones && result.phones.length > 0;
+      default:
+        return false;
+    }
+  });
+
+  const tabItems = useMemo(() => {
+    if (!result) return [];
+    return TAB_KEYS.filter((key) => {
+      switch (key) {
+        case "words":
+          return enableWords && result.blocks.length > 0;
+        case "links":
+          return enableLinks && result.links.length > 0;
+        case "emails":
+          return enableEmails && result.emails.length > 0;
+        case "phones":
+          return enablePhones && result.phones.length > 0;
+        default:
+          return false;
+      }
+    }).map((key) => {
+      const label = t(`clipboard:segmentFill.tabs.${key}`);
+      let count = 0;
+      switch (key) {
+        case "words":
+          count = result.blocks.length;
+          break;
+        case "links":
+          count = result.links.length;
+          break;
+        case "emails":
+          count = result.emails.length;
+          break;
+        case "phones":
+          count = result.phones.length;
+          break;
+      }
+      return {
+        key,
+        label: `${label} (${count})`,
+      };
+    });
+  }, [result, enableWords, enableLinks, enableEmails, enablePhones, t]);
+
   return (
     <Modal
-      afterOpenChange={(open) => {
-        // 重新打开展示上次仍生效的选中，保持状态简单：每次打开由 item effect 重置。
-        void open;
-      }}
       cancelButtonProps={{ style: { display: "none" } }}
       confirmLoading={filling}
       destroyOnHidden
@@ -139,48 +234,128 @@ const SegmentFillModal: FC<SegmentFillModalProps> = (props) => {
       onOk={handleFill}
       open={!!item}
       title={t("clipboard:segmentFill.title")}
+      width={560}
     >
-      <p className="mb-3 text-ant-quaternary text-xs">
-        {t("clipboard:segmentFill.placeholder")}
-      </p>
-
       {loading ? (
-        <div className="h-20 animate-pulse rounded-1 bg-ant-fill-secondary" />
-      ) : blocks.length === 0 ? (
+        <div className="h-40 animate-pulse rounded-1 bg-ant-fill-secondary" />
+      ) : !result ? (
         <p className="py-6 text-center text-ant-quaternary text-sm">
           {t("clipboard:segmentFill.empty")}
         </p>
       ) : (
-        <div className="flex max-h-64 flex-wrap gap-1.5 overflow-y-auto pb-1">
-          {blocks.map((block, index) => {
-            const isActive = selected.has(index);
-            return (
-              <button
-                className={cn(
-                  "rounded-1 border px-2 py-1 text-sm leading-none transition-colors motion-reduce:transition-none",
-                  isActive
-                    ? "border-ant-primary bg-ant-blue-1 text-ant-primary"
-                    : "border-ant-border bg-ant-container text-ant-text hover:border-ant-primary/60",
-                )}
-                key={block.id}
-                onPointerDown={(event) => handlePointerDown(event, index)}
-                onPointerEnter={(event) => handlePointerEnter(event, index)}
-                onPointerMove={handlePointerMove}
-                onPointerUp={handlePointerUp}
-                type="button"
-              >
-                {block.text}
-              </button>
-            );
-          })}
+        <div className="flex flex-col gap-3">
+          {/* 文本编辑区 */}
+          <TextArea
+            autoSize={{ maxRows: 6, minRows: 2 }}
+            onChange={(e) => setEditingText(e.target.value)}
+            placeholder={t("clipboard:segmentFill.editPlaceholder")}
+            value={editingText}
+          />
+
+          {/* 开关区 */}
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
+            <label
+              className="flex cursor-pointer items-center gap-1.5 text-sm"
+              htmlFor="toggle-words"
+            >
+              <Switch
+                checked={enableWords}
+                id="toggle-words"
+                onChange={setEnableWords}
+                size="small"
+              />
+              <span>{t("clipboard:segmentFill.toggles.words")}</span>
+            </label>
+            <label
+              className="flex cursor-pointer items-center gap-1.5 text-sm"
+              htmlFor="toggle-links"
+            >
+              <Switch
+                checked={enableLinks}
+                id="toggle-links"
+                onChange={setEnableLinks}
+                size="small"
+              />
+              <span>{t("clipboard:segmentFill.toggles.links")}</span>
+            </label>
+            <label
+              className="flex cursor-pointer items-center gap-1.5 text-sm"
+              htmlFor="toggle-emails"
+            >
+              <Switch
+                checked={enableEmails}
+                id="toggle-emails"
+                onChange={setEnableEmails}
+                size="small"
+              />
+              <span>{t("clipboard:segmentFill.toggles.emails")}</span>
+            </label>
+            <label
+              className="flex cursor-pointer items-center gap-1.5 text-sm"
+              htmlFor="toggle-phones"
+            >
+              <Switch
+                checked={enablePhones}
+                id="toggle-phones"
+                onChange={setEnablePhones}
+                size="small"
+              />
+              <span>{t("clipboard:segmentFill.toggles.phones")}</span>
+            </label>
+          </div>
+
+          {/* Tab 切换 */}
+          {tabItems.length > 0 && (
+            <Tabs
+              activeKey={activeTab}
+              items={tabItems}
+              onChange={(key) => {
+                setActiveTab(key as TabKey);
+                setSelected(new Set());
+              }}
+              size="small"
+            />
+          )}
+
+          {/* 词块展示区 */}
+          {hasAnyBlocks ? (
+            <div className="flex max-h-48 flex-wrap gap-1.5 overflow-y-auto pb-1">
+              {currentBlocks.map((block, index) => {
+                const isActive = selected.has(index);
+                return (
+                  <button
+                    className={cn(
+                      "rounded-1 border px-2 py-1 text-sm leading-none transition-colors motion-reduce:transition-none",
+                      isActive
+                        ? "border-ant-primary bg-ant-blue-1 text-ant-primary"
+                        : "border-ant-border bg-ant-container text-ant-text hover:border-ant-primary/60",
+                    )}
+                    key={block.id}
+                    onPointerDown={(event) => handlePointerDown(event, index)}
+                    onPointerEnter={(event) => handlePointerEnter(event, index)}
+                    onPointerMove={handlePointerMove}
+                    onPointerUp={handlePointerUp}
+                    type="button"
+                  >
+                    {block.text}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="py-4 text-center text-ant-quaternary text-sm">
+              {t("clipboard:segmentFill.noResults")}
+            </p>
+          )}
+
+          {/* 已选预览 */}
+          {selectedText ? (
+            <div className="break-all rounded-1 border border-ant-border-secondary bg-ant-fill-quaternary px-3 py-2 text-sm">
+              {selectedText}
+            </div>
+          ) : null}
         </div>
       )}
-
-      {selectedText ? (
-        <div className="mt-3 break-all rounded-1 border border-ant-border-secondary bg-ant-fill-quaternary px-3 py-2 text-sm">
-          {selectedText}
-        </div>
-      ) : null}
     </Modal>
   );
 };
