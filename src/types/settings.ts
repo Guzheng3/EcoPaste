@@ -215,6 +215,7 @@ export interface Settings {
   onboarding: Onboarding;
   update: Update;
   copyFeedbackMigrated?: boolean;
+  updateOnReuseMigrated?: boolean;
 }
 
 /**

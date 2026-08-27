@@ -22,6 +22,9 @@ pub struct Settings {
     /// 内部一次性迁移标记：首次加载旧配置时把「复制成功提示」强制开启并落盘，
     /// 之后再启动尊重用户手动开关，不再覆盖。前端不依赖该字段。
     pub copy_feedback_migrated: bool,
+    /// 内部一次性迁移标记：首次加载旧配置时把「复用时更新记录」（粘贴置顶）强制开启，
+    /// 让旧版本沿用新默认行为；迁移后尊重用户手动开关。
+    pub update_on_reuse_migrated: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -380,7 +383,8 @@ impl Default for Content {
             delete_pinned_confirm: true,
             delete_favorite_items_only_in_favorite_group: true,
             auto_favorite: false,
-            update_on_reuse: false,
+            // 默认开启：从历史复制 / 粘贴时置顶并计一次使用（用户要求粘贴后原条目移到开头）。
+            update_on_reuse: true,
             extract_entities: true,
             sort: ClipboardItemSort::UpdatedAt,
             item_actions: vec![
