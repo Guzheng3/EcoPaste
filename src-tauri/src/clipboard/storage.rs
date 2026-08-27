@@ -44,7 +44,6 @@ pub struct StoredImage {
     /// 入库 `content`：图片文件名 `<来源>_<时间>.png`（不含目录）。
     pub file_name: String,
     /// 去重指纹来源：PNG 字节的 blake3（十六进制）。与文件名无关，保证同期去重稳定。
-    #[allow(dead_code)]
     pub content_digest: String,
     pub width: i64,
     pub height: i64,

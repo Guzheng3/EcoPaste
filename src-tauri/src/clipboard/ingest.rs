@@ -6,8 +6,9 @@
 //! - `search_text` 存**纯文本**（HTML 去标签 / RTF 用 OS 提供的 plain 文本），供 FTS 检索与纯文本粘贴；
 //! - 纯文本无富文本时 `sub_kind` 走 url/email/color/path 识别。
 //!
-//! 图片：落盘原图 + 缩略图，`content` 存文件名 `<sha256>.png`，`content_hash` 仍走
-//! [`content_hash(Image, file_name)`]，而 `file_name` 源自 PNG 字节哈希 → 去重对字节敏感。
+//! 图片：落盘原图 + 缩略图，`content` 存随机文件名 `<来源>_<时间戳>.png`；
+//! 去重键 `content_hash` 不走文件名（那是随机的），而按原图字节的 blake3 digest 计算 →
+//! 同一张图无论复制 / 粘贴多少次都判为同内容（见 [`Draft::content_hash_override`]）。
 
 use chrono::Utc;
 
@@ -61,6 +62,9 @@ struct Draft {
     width: Option<i64>,
     height: Option<i64>,
     size: Option<i64>,
+    /// 去重指纹的替代输入：`None` 时用 `content`（与其他类型一致），
+    /// 图片用它把去重键从随机文件名改为图片字节 digest，使复制 / 粘贴图片可以稳定去重。
+    content_hash_override: Option<String>,
 }
 
 /// files 列表入库时的 `content`：换行连接的路径串（与去重哈希、FTS 检索单一来源）。
@@ -113,6 +117,7 @@ fn draft_from_text(text: &TextPayload, capture: &Capture, plain_only: bool) -> O
                             width: None,
                             height: None,
                             size: Some(count_text_bytes(html)),
+                            content_hash_override: None,
                         });
                     }
                 }
@@ -128,6 +133,7 @@ fn draft_from_text(text: &TextPayload, capture: &Capture, plain_only: bool) -> O
                             width: None,
                             height: None,
                             size: Some(count_text_bytes(rtf)),
+                            content_hash_override: None,
                         });
                     }
                 }
@@ -160,6 +166,7 @@ fn draft_plain_text(plain: &str, plain_search: Option<String>, summary: Option<S
         width: None,
         height: None,
         size: Some(count_text_bytes(plain)),
+        content_hash_override: None,
     }
 }
 
@@ -270,6 +277,7 @@ pub fn build_item_with_source(
                     width: None,
                     height: None,
                     size: None,
+                    content_hash_override: None,
                 })
             }
         }
@@ -277,7 +285,6 @@ pub fn build_item_with_source(
             if !capture.image {
                 return Ok(None);
             }
-
             // 无原始路径的图片统一存临时目录，不设大小上限；回收由 24h 定时清理负责。
             let stored = store.store(image, source_name)?;
             Some(Draft {
@@ -290,6 +297,11 @@ pub fn build_item_with_source(
                 width: Some(stored.width),
                 height: Some(stored.height),
                 size: Some(stored.size),
+                // 图片去重键改用字节 digest：文件名是随机的，作键会使同一张图每次复制 / 粘贴都判为新内容。
+                content_hash_override: Some(content_hash(
+                    ClipboardKind::Image,
+                    &stored.content_digest,
+                )),
             })
         }
     };
@@ -319,7 +331,9 @@ pub fn build_item_with_source(
 
     Ok(Some(ClipboardItem {
         id: uuid::Uuid::new_v4().to_string(),
-        content_hash: content_hash(draft.kind, &draft.content),
+        content_hash: draft
+            .content_hash_override
+            .unwrap_or_else(|| content_hash(draft.kind, &draft.content)),
         kind: draft.kind,
         sub_kind: draft.sub_kind,
         group_id: None,
@@ -795,12 +809,28 @@ mod tests {
         assert_eq!(item.width, Some(20));
         assert_eq!(item.height, Some(10));
         assert!(item.size.unwrap() > 0);
-        assert_eq!(
+        // 去重键应基于图片字节 digest，而不是随机文件名。
+        assert_ne!(
             item.content_hash,
             content_hash(ClipboardKind::Image, &item.content)
         );
         // 原图确实落盘。
         assert!(s.origin_path(&item.content).exists());
+    }
+
+    #[test]
+    fn image_dedup_hash_is_stable_across_captures() {
+        let (_d, s) = store();
+        let payload = ClipboardPayload::Image(ImagePayload {
+            bytes: sample_png(32, 24),
+            width: 32,
+            height: 24,
+        });
+        let a = build_item(&s, &payload).unwrap().unwrap();
+        let b = build_item(&s, &payload).unwrap().unwrap();
+        // 文件名每次捕获都不同，但字节相同 → 去重指纹必须一致（otherwise 复制/粘贴图片会新增条目）。
+        assert_ne!(a.content, b.content);
+        assert_eq!(a.content_hash, b.content_hash);
     }
 
     #[test]
