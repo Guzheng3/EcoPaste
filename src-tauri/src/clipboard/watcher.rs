@@ -122,13 +122,11 @@ pub fn materialize_source(
     app
 }
 
-/// 复制成功反馈：仅当 `add_deduplicated` 为 false（本次是真正新入库，而非同内容重复复制）
-/// 且设置开启 `feedback.copy_sound` 时，在屏幕右下角弹一个独立置顶小窗提示。频率与剪贴板
-/// 事件相当，但只在开关开启且非去重时广播；失败仅记日志，不阻断入库主流程。
-fn notify_copy_feedback(app: &AppHandle, deduplicated: bool) {
-    if deduplicated {
-        return;
-    }
+/// 复制成功反馈：外部复制入库时（无论真正新入库还是去重命中已有条目），
+/// 只要设置开启 `feedback.copy_sound`，就在屏幕右下角弹一个独立置顶小窗提示——
+/// 去重命中时该气泡同时传达「复制成功 + 已有条目已移到历史开头」。
+/// 失败仅记日志，不阻断入库主流程。
+fn notify_copy_feedback(app: &AppHandle) {
     let enabled = app
         .try_state::<SettingsStore>()
         .map(|s| s.snapshot().clipboard.feedback.copy_sound)
@@ -166,9 +164,8 @@ pub async fn persist_and_notify(
     // 由 watcher 线程经 async_runtime::spawn 调用，不在主线程，
     // 故必须通过 run_on_main_thread 投递，否则随机崩溃。
     let app_handle = app.clone();
-    let dedup = result.deduplicated;
     if let Err(err) = app_handle.clone().run_on_main_thread(move || {
-        notify_copy_feedback(&app_handle, dedup);
+        notify_copy_feedback(&app_handle);
     }) {
         log::warn!("dispatch notify_copy_feedback to main thread failed: {err}");
     }
