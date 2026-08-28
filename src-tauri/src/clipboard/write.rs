@@ -38,6 +38,7 @@ pub fn write_to_clipboard(
 
     match item.kind {
         ClipboardKind::Text => write_text(&ctx, guard, item, plain)?,
+        ClipboardKind::Image if plain => write_image_path_as_text(&ctx, store, guard, item)?,
         ClipboardKind::Image => write_image(&ctx, store, guard, item)?,
         // files + plain：把路径列表当文本写回，供「粘贴为路径」使用。
         ClipboardKind::Files if plain => write_files_as_text(&ctx, guard, item)?,
@@ -94,6 +95,7 @@ fn write_text(
         // url / email / color / path 及无 sub_kind 都走纯文本通道。
         _ => ctx.set_text(content).map_err(clip_err)?,
     }
+    guard.mark_self_write();
     Ok(())
 }
 
@@ -116,6 +118,25 @@ fn write_image(
     guard.suppress(item.content_hash.clone());
     guard.suppress(content_hash(ClipboardKind::Image, &blake3_hex(&bytes)));
     ctx.set_image(image).map_err(clip_err)?;
+    guard.mark_self_write();
+    Ok(())
+}
+
+/// 把图片在磁盘上的文件路径当纯文本写回剪贴板，供「粘贴为路径」使用。
+fn write_image_path_as_text(
+    ctx: &ClipboardContext,
+    store: &ImageStore,
+    guard: &WritebackGuard,
+    item: &ClipboardItem,
+) -> Result<()> {
+    let path = store.origin_path(&item.content);
+    let path_str = path
+        .to_str()
+        .ok_or_else(|| AppError::Clipboard("image path is not valid UTF-8".to_owned()))?;
+
+    guard.suppress(content_hash(ClipboardKind::Text, path_str));
+    ctx.set_text(path_str.to_owned()).map_err(clip_err)?;
+    guard.mark_self_write();
     Ok(())
 }
 
@@ -132,6 +153,7 @@ fn write_files(ctx: &ClipboardContext, guard: &WritebackGuard, item: &ClipboardI
 
     guard.suppress(item.content_hash.clone());
     ctx.set_files(paths).map_err(clip_err)?;
+    guard.mark_self_write();
     Ok(())
 }
 
@@ -146,6 +168,7 @@ fn write_files_as_text(
 
     guard.suppress(content_hash(ClipboardKind::Text, &text));
     ctx.set_text(text).map_err(clip_err)?;
+    guard.mark_self_write();
     Ok(())
 }
 

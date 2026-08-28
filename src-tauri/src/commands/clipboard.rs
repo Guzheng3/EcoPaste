@@ -830,7 +830,7 @@ fn compute_available_actions(item: &ClipboardItem) -> Vec<ClipboardAction> {
     match item.kind {
         ClipboardKind::Text => actions.push(ClipboardAction::PasteAsPlainText),
         ClipboardKind::Files => actions.push(ClipboardAction::PasteAsPath),
-        ClipboardKind::Image => {}
+        ClipboardKind::Image => actions.push(ClipboardAction::PasteAsPath),
     }
 
     actions.push(ClipboardAction::Copy);
@@ -844,8 +844,9 @@ fn compute_available_actions(item: &ClipboardItem) -> Vec<ClipboardAction> {
         _ => {}
     }
 
-    let can_reveal =
-        item.kind == ClipboardKind::Files || item.sub_kind == Some(ClipboardSubKind::Path);
+    let can_reveal = item.kind == ClipboardKind::Files
+        || item.kind == ClipboardKind::Image
+        || item.sub_kind == Some(ClipboardSubKind::Path);
     if can_reveal {
         #[cfg(target_os = "macos")]
         actions.push(ClipboardAction::RevealInFinder);
@@ -1576,6 +1577,7 @@ pub async fn open_clipboard_item_link(
 pub async fn reveal_clipboard_item(
     app: AppHandle,
     db: State<'_, DatabaseState>,
+    store: State<'_, ImageStore>,
     id: String,
 ) -> Result<()> {
     use tauri_plugin_opener::OpenerExt;
@@ -1589,6 +1591,12 @@ pub async fn reveal_clipboard_item(
         item.content
             .split('\n')
             .find(|s| !s.is_empty())
+            .unwrap_or("")
+            .to_owned()
+    } else if item.kind == ClipboardKind::Image {
+        store
+            .origin_path(&item.content)
+            .to_str()
             .unwrap_or("")
             .to_owned()
     } else {

@@ -323,6 +323,13 @@ impl ClipboardHandler for ClipboardChangeHandler {
             .map(|s| s.snapshot())
             .unwrap_or_default();
 
+        // 自身写回后 300ms 窗口内的变更事件直接跳过，不读取剪贴板：
+        // 避免与目标应用的粘贴（Ctrl+V/⌘V 需 OpenClipboard）竞争，
+        // 同时避免图片字节往返不保真导致 hash 抑制落空后重新入库。
+        if self.guard.recent_self_write() {
+            return;
+        }
+
         // 同步读取 + 转换（含图片落盘）：拿到 content_hash 才能判定是否为自身写回。
         let payload = match read_with_retry(&CLIPBOARD_READ_RETRY_DELAYS, || {
             self.reader.read_with_capture(&settings.clipboard.capture)
