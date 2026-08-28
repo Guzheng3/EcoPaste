@@ -16,7 +16,9 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
 use std::time::Duration;
 
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
+use tauri::{
+    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder,
+};
 
 use crate::core::{AppError, Result};
 use crate::window::lifecycle;
@@ -96,6 +98,13 @@ fn show_inner(app: &AppHandle) -> Result<()> {
     let window = app
         .get_webview_window(COPIED_WINDOW_LABEL)
         .ok_or_else(|| AppError::Other(anyhow::anyhow!("copied window missing")))?;
+
+    // 每次都按逻辑像素重设尺寸：窗口常驻不销毁，期间显示器分辨率/缩放变化时
+    // Windows 会保持物理尺寸不变，逻辑宽度随之变小，内容被挤成两行。
+    // 重新施加逻辑尺寸后按当前缩放换算，保证内容始终完整单行渲染。
+    window
+        .set_size(LogicalSize::new(WINDOW_WIDTH, WINDOW_HEIGHT))
+        .map_err(|err| AppError::Other(anyhow::anyhow!("copied toast resize: {err}")))?;
 
     // 底部居中定位：优先放剪贴板窗口所在显示器，其次主显示器。
     // 不再是右下角——与主流截图/通知弹窗位置一致，视觉中心化。

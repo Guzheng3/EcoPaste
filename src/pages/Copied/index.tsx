@@ -159,6 +159,9 @@ const COPED_CSS = `
    100% { opacity: 0; transform: scale(.75) translateY(-16px); }
  }
 
+ /* 文字：单行渲染，绝不换行（DPI 变化等极端情况下宁可稍宽也不折行） */
+ .copied-text { white-space: nowrap; }
+
  /* 图标：圆环 + 对勾，stroke 逐笔画出 */
  .copied-badge { width: 30px; height: 30px; display: block; flex-shrink: 0; }
  .copied-ring {
