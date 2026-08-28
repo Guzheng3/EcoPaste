@@ -26,8 +26,8 @@ use super::read::ClipboardReader;
 use super::source::{self, FrontmostApp};
 use super::storage::ImageStore;
 use crate::db::apps::upsert_app;
-use crate::db::items::{upsert_item, UpsertResult};
-use crate::db::models::{ClipboardApp, ClipboardItem};
+use crate::db::items::{find_item_by_id, upsert_item, UpsertResult};
+use crate::db::models::{ClipboardApp, ClipboardItem, ClipboardKind};
 use crate::settings::SettingsStore;
 
 /// 剪贴板更新事件名。前端监听此事件后增量刷新 / 重新拉取列表。
@@ -140,6 +140,11 @@ fn notify_copy_feedback(app: &AppHandle) {
 /// 去重入库 + emit「剪贴板更新」事件。监听回调与 `read_clipboard` 命令共用，
 /// 保证两条路径的入库语义与事件契约一致。失败仅记日志（监听场景无人接收 Result）。
 ///
+/// 图片落盘发生在入库之前，本函数负责维持「一条记录 ↔ 一张落盘文件」不变量：
+/// 入库失败或去重命中（记录复用旧文件）时，删除本次刚落盘的未被引用文件（见
+/// [`remove_stored_image_file`]）；记录删除路径（手动删 / 历史清理 / 敏感过期）由
+/// 各自调用方连带删图。
+///
 /// `source_app` 为 `Some` 时先 upsert apps 表再写 item，满足 FK 约束。
 /// 应用 upsert 失败不阻断条目入库——清掉 source_app_id 后继续，避免单次系统调用抽风丢内容。
 pub async fn persist_and_notify(
@@ -158,7 +163,28 @@ pub async fn persist_and_notify(
             }
         }
     }
-    let result = upsert_item(pool, &item_to_write).await?;
+    let result = match upsert_item(pool, &item_to_write).await {
+        Ok(result) => result,
+        Err(err) => {
+            // 入库失败：本次落盘的图片文件不会有任何记录引用，连带删除避免孤儿堆积。
+            remove_stored_image_file(app, &item_to_write);
+            return Err(err);
+        }
+    };
+    // 图片去重命中：记录复用旧文件，本次刚落盘的文件未被引用，删掉——
+    // 保证一条记录只对应一张落盘文件（temp 文件名含 digest 前缀，与记录 content 必不同名，
+    // 这里的比较只是防御：万一同名说明文件正被记录使用，绝不能删）。
+    if result.deduplicated && item_to_write.kind == ClipboardKind::Image {
+        match find_item_by_id(pool, &result.id).await {
+            Ok(Some(existing)) if existing.content != item_to_write.content => {
+                remove_stored_image_file(app, &item_to_write);
+            }
+            Ok(_) => {}
+            Err(err) => {
+                log::warn!("find dedup target {} failed: {err}", result.id);
+            }
+        }
+    }
     // notify_copy_feedback 内部会调用 copied::show → ensure_window，可能触发
     // WebviewWindowBuilder::build()，必须在主线程执行。
     // 由 watcher 线程经 async_runtime::spawn 调用，不在主线程，
@@ -180,6 +206,20 @@ pub async fn persist_and_notify(
         log::warn!("emit {CLIPBOARD_UPDATED_EVENT} failed: {err}");
     }
     Ok(result)
+}
+
+/// 删除本次入库尝试落盘的图片文件（原图 + 缩略图 + 旧布局同名，幂等）。仅 image 有落盘
+/// 副作用，其他 kind 直接返回；`ImageStore` 未注册或删除失败只记日志——孤儿最坏占磁盘，
+/// 不影响功能。
+fn remove_stored_image_file(app: &AppHandle, item: &ClipboardItem) {
+    if item.kind != ClipboardKind::Image {
+        return;
+    }
+    if let Some(store) = app.try_state::<ImageStore>() {
+        if let Err(err) = store.remove(&item.content) {
+            log::warn!("remove unreferenced image {} failed: {err}", item.content);
+        }
+    }
 }
 
 /// 启动监听：注册 [`WritebackGuard`] / [`ImageStore`] / [`AppIconStore`] 到 Tauri `State`

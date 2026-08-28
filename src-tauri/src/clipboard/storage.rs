@@ -1,12 +1,14 @@
 //! 剪贴板图片（无原始文件路径，如从网页 / App 复制）的临时落盘。
 //!
 //! 这类图片只有像素字节、无法追溯到磁盘原文件，因此不做长期存档，而是存到应用数据下的
-//! `temp` 目录、按「来源 + 时间」命名，由调度器 24 小时后连同数据库记录一起清除。
+//! `temp` 目录、按「来源 + 时间 + digest 前缀」命名。生命周期完全跟随数据库记录：
+//! 记录在图在，记录删除（手动 / 历史保留期清理 / 敏感过期）时由调用方连带删盘上文件；
+//! 去重命中时记录复用旧文件，本次刚落盘的未被引用文件由监听层即时删除。
 //! 目录布局（`content` 字段存文件名，读取路径由文件名现算，不入库）：
 //! ```text
 //! <app_local_data>/resources/clipboard-images/
-//!   temp/<来源>_<时间>.png              原图（PNG）
-//!   temp/thumbnails/<同上>.png          缩略图（PNG，最长边 <= THUMBNAIL_MAX），首次预览时按需生成
+//!   temp/<来源>_<时间>_<digest8>.png        原图（PNG）
+//!   temp/thumbnails/<同上>.png              缩略图（PNG，最长边 <= THUMBNAIL_MAX），首次预览时按需生成
 //! ```
 //!
 //! 早期版本曾按「PNG 字节哈希分片」永久存档（`origin/<ab>/<hash>.png`）。为保证已存记录仍能
@@ -41,7 +43,7 @@ const MAX_SOURCE_CHARS: usize = 40;
 
 /// 一次图片落盘的结果，交给 ingest 写入 `ClipboardItem`。
 pub struct StoredImage {
-    /// 入库 `content`：图片文件名 `<来源>_<时间>.png`（不含目录）。
+    /// 入库 `content`：图片文件名 `<来源>_<时间>_<digest8>.png`（不含目录）。
     pub file_name: String,
     /// 去重指纹来源：PNG 字节的 blake3（十六进制）。与文件名无关，保证同期去重稳定。
     pub content_digest: String,
@@ -91,7 +93,7 @@ impl ImageStore {
     /// 由 [`Self::ensure_thumbnail`] 在前端首次预览时懒生成。
     pub fn store(&self, image: &ImagePayload, source: Option<&str>) -> Result<StoredImage> {
         let content_digest = blake3_hex(&image.bytes);
-        let file_name = temp_file_name(source);
+        let file_name = temp_file_name(source, &content_digest);
 
         let origin_path = self.temp_origin_path(&file_name);
         write_file(&origin_path, &image.bytes)?;
@@ -205,12 +207,13 @@ impl ImageStore {
     }
 }
 
-/// 由「来源应用名 + 当前时间」生成 temp 图片文件名，形如 `Chrome_20260823_214500.123.png`。
-/// 毫秒保证同一秒内同来源的不同图不撞名；来源名清洗非法字符后截断。
-fn temp_file_name(source: Option<&str>) -> String {
+/// 由「来源应用名 + 当前时间 + digest 前缀」生成 temp 图片文件名，
+/// 形如 `Chrome_20260823_214500.123_1a2b3c4d.png`。digest 前缀（十六进制前 8 位）保证
+/// 同来源同毫秒的不同图也不撞名——一条记录对应且仅对应一张落盘文件；来源名清洗非法字符后截断。
+fn temp_file_name(source: Option<&str>, content_digest: &str) -> String {
     let src = sanitize_source(source);
     let ts = Utc::now().format("%Y%m%d_%H%M%S%.3f");
-    format!("{src}_{ts}.png")
+    format!("{src}_{ts}_{}.png", &content_digest[..8])
 }
 
 /// 清洗来源名用于文件名：替换路径非法字符与空白为 `_`，去首尾空白/点，空串退化为 `unknown`，截断。
@@ -386,6 +389,18 @@ mod tests {
             "got {}",
             stored.file_name
         );
+    }
+
+    #[test]
+    fn different_images_same_source_and_millisecond_do_not_collide() {
+        // 同一来源的两种不同图（digest 前缀不同）：即使落盘发生在同一毫秒也必须得到不同文件名，
+        // 保证「一条记录只对应一张落盘文件」不因覆盖写而破坏。
+        let (_dir, store) = temp_store();
+        let a = store.store(&payload(10, 10), Some("Chrome")).unwrap();
+        let b = store.store(&payload(64, 48), Some("Chrome")).unwrap();
+        assert_ne!(a.file_name, b.file_name);
+        assert!(store.origin_path(&a.file_name).exists());
+        assert!(store.origin_path(&b.file_name).exists());
     }
 
     #[test]

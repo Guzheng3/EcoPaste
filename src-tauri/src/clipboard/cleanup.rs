@@ -3,6 +3,8 @@
 //! 调度为固定时间点：启动（开机）立即执行一次，之后每天跨过午夜 00:00 后再执行一次。
 //! 每次执行都从 `SettingsStore` 取最新配置，用户在偏好里调时长 / 上限后不必重启即可生效。
 //! 置顶与收藏项一律保留（由 [`cleanup_history`] 保证）。
+//! 敏感条目 TTL 在每个调度心跳里单独检查（见 [`run_sensitive_cleanup`]）。
+//! 图片没有独立生命周期：跟随数据库记录，记录删除时由调用方连带删盘上文件。
 
 use std::time::Duration;
 
@@ -12,27 +14,19 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use super::storage::ImageStore;
 use super::watcher::CLIPBOARD_UPDATED_EVENT;
-use crate::db::items::{cleanup_expired_images, cleanup_history, cleanup_sensitive_expired};
+use crate::db::items::{cleanup_history, cleanup_sensitive_expired};
 use crate::settings::{Retention, RetentionUnit, SettingsStore};
 
 /// 调度器检查设置与到期状态的频率；敏感条目 TTL 可短至 1 小时，需每个心跳都检查。
 const SCHEDULER_TICK_INTERVAL: Duration = Duration::from_secs(60);
 
-/// 无原始路径临时图片的保留时长（小时）：超过后连同记录一并清除。
-const IMAGE_TEMP_HOURS: i64 = 24;
-
-/// 图片临时清理的轮询节奏：`IMAGE_TEMP_HOURS` 级生命周期，每 `IMAGE_CLEANUP_EVERY_TICKS` 次
-/// 心跳（60s）跑一轮，即每 60 分钟一次；开机时还会单独先跑首轮。
-const IMAGE_CLEANUP_EVERY_TICKS: u64 = 60;
-
 /// 启动后台清理任务：开机（启动）立即清理一次，之后每个调度心跳做敏感条目过期清理，
 /// 并仅当跨入新的一天（每晚午夜后第一个心跳）时执行历史容量清理。
 pub fn spawn(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
-        // 开机首次运行：立即清理一次（历史 + 敏感 + 临时图片）。
+        // 开机首次运行：立即清理一次（历史 + 敏感）。
         run_once(&app).await;
         run_sensitive_cleanup(&app).await;
-        run_image_cleanup(&app).await;
 
         // 开机已跑过，记录当天，避免同一天内重复；跨天后才触发下一次。
         let mut last_cleanup_date = Local::now().date_naive();
@@ -40,19 +34,11 @@ pub fn spawn(app: AppHandle) {
         let mut ticker = tokio::time::interval(SCHEDULER_TICK_INTERVAL);
         ticker.tick().await;
 
-        let mut image_ticks = 0u64;
         loop {
             ticker.tick().await;
 
             // 敏感条目 TTL 可短至 1 小时，需在每个心跳都检查到期（DELETE 有索引，代价低）。
             run_sensitive_cleanup(&app).await;
-
-            // 临时图片每 60 分钟轮询清理（开机已跑过首轮，这里只做周期性触发）。
-            image_ticks += 1;
-            if image_ticks >= IMAGE_CLEANUP_EVERY_TICKS {
-                run_image_cleanup(&app).await;
-                image_ticks = 0;
-            }
 
             let today = Local::now().date_naive();
             if today > last_cleanup_date {
@@ -114,29 +100,6 @@ async fn run_sensitive_cleanup(app: &AppHandle) {
             }
         }
         Err(err) => log::warn!("sensitive cleanup failed: {err}"),
-    }
-}
-
-/// 清理超过 [`IMAGE_TEMP_HOURS`] 小时的临时图片记录及其落盘文件。
-/// 固定 24h 生命周期，不受历史保留期影响；收藏 / 置顶项豁免。失败仅记日志。
-async fn run_image_cleanup(app: &AppHandle) {
-    let pool = app.state::<crate::db::DatabaseState>().pool().await;
-    let cutoff = Utc::now() - ChronoDuration::hours(IMAGE_TEMP_HOURS);
-    match cleanup_expired_images(&pool, cutoff).await {
-        Ok(outcome) if outcome.removed == 0 => {}
-        Ok(outcome) => {
-            if !outcome.image_files.is_empty() {
-                remove_images(app, &outcome.image_files);
-            }
-            log::info!("temp image cleanup removed {} item(s)", outcome.removed);
-            if let Err(err) = app.emit(
-                CLIPBOARD_UPDATED_EVENT,
-                json!({ "cleanup": outcome.removed }),
-            ) {
-                log::warn!("emit image cleanup event failed: {err}");
-            }
-        }
-        Err(err) => log::warn!("temp image cleanup failed: {err}"),
     }
 }
 

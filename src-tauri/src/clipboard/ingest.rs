@@ -285,7 +285,8 @@ pub fn build_item_with_source(
             if !capture.image {
                 return Ok(None);
             }
-            // 无原始路径的图片统一存临时目录，不设大小上限；回收由 24h 定时清理负责。
+            // 无原始路径的图片统一存临时目录，不设大小上限；生命周期跟随数据库记录：
+            // 记录删除时连带删文件，去重命中时本次落盘的未被引用文件由监听层即时删除。
             let stored = store.store(image, source_name)?;
             Some(Draft {
                 kind: ClipboardKind::Image,
