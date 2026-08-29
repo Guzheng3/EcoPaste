@@ -130,10 +130,10 @@ pub(super) const ACTION_GROUPS: &[&[ClipboardMenuAction]] = &[
     ],
     &[
         ClipboardMenuAction::ToggleFavorite,
+        ClipboardMenuAction::SegmentFill,
         ClipboardMenuAction::TogglePinned,
         ClipboardMenuAction::MoveToGroup,
         ClipboardMenuAction::EditNote,
-        ClipboardMenuAction::SegmentFill,
     ],
     &[ClipboardMenuAction::Delete],
 ];

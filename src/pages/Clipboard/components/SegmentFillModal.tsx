@@ -112,6 +112,20 @@ const SegmentFillModal: FC<SegmentFillModalProps> = (props) => {
       .join(" ");
   }, [currentBlocks, selected]);
 
+  // 松开鼠标结束框选：pointerup 可能落在词块以外的区域（间隙、预览框、弹窗背景），
+  // 仅绑定在词块按钮上会漏掉，导致 dragRef 残留、选区在松开后仍跟随指针扩展。
+  useEffect(() => {
+    const endDrag = () => {
+      dragRef.current = null;
+    };
+    window.addEventListener("pointerup", endDrag);
+    window.addEventListener("pointercancel", endDrag);
+    return () => {
+      window.removeEventListener("pointerup", endDrag);
+      window.removeEventListener("pointercancel", endDrag);
+    };
+  }, []);
+
   const handlePointerDown = (
     event: ReactPointerEvent<HTMLButtonElement>,
     index: number,
@@ -121,25 +135,26 @@ const SegmentFillModal: FC<SegmentFillModalProps> = (props) => {
     dragRef.current = { anchor: index, base: new Set(selected), moved: false };
   };
 
-  const handlePointerEnter = (
-    event: ReactPointerEvent<HTMLButtonElement>,
-    index: number,
-  ) => {
+  // 拖拽中的命中检测：指针滑到哪个词块就把选区扩展到哪；
+  // 松开后 dragRef 已被 window 监听清空，此处直接返回，选区不再跟随。
+  const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
-    if (!drag?.moved) return;
-    event.preventDefault();
+    if (!drag) return;
+    if (event.buttons === 0) {
+      dragRef.current = null;
+      return;
+    }
+    const target = (event.target as HTMLElement).closest<HTMLElement>(
+      "[data-block-index]",
+    );
+    if (!target) return;
+    const index = Number(target.dataset.blockIndex);
+    if (index !== drag.anchor) drag.moved = true;
     const lo = Math.min(drag.anchor, index);
     const hi = Math.max(drag.anchor, index);
     const next = new Set(drag.base);
     for (let i = lo; i <= hi; i += 1) next.add(i);
     setSelected(next);
-  };
-
-  const handlePointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    const drag = dragRef.current;
-    if (!drag) return;
-    event.preventDefault();
-    drag.moved = true;
   };
 
   const handlePointerUp = (event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -319,7 +334,10 @@ const SegmentFillModal: FC<SegmentFillModalProps> = (props) => {
 
           {/* 词块展示区 */}
           {hasAnyBlocks ? (
-            <div className="flex max-h-48 flex-wrap gap-1.5 overflow-y-auto pb-1">
+            <div
+              className="flex max-h-48 flex-wrap gap-1.5 overflow-y-auto pb-1"
+              onPointerMove={handlePointerMove}
+            >
               {currentBlocks.map((block, index) => {
                 const isActive = selected.has(index);
                 return (
@@ -330,10 +348,9 @@ const SegmentFillModal: FC<SegmentFillModalProps> = (props) => {
                         ? "border-ant-primary bg-ant-blue-1 text-ant-primary"
                         : "border-ant-border bg-ant-container text-ant-text hover:border-ant-primary/60",
                     )}
+                    data-block-index={index}
                     key={block.id}
                     onPointerDown={(event) => handlePointerDown(event, index)}
-                    onPointerEnter={(event) => handlePointerEnter(event, index)}
-                    onPointerMove={handlePointerMove}
                     onPointerUp={handlePointerUp}
                     type="button"
                   >

@@ -563,6 +563,10 @@ const List: FC = () => {
       case "toggleFavorite":
         handleShortcutToggleFavorite(target.id);
         return;
+      case "segmentFill":
+        if (previewSession?.itemId === target.id) closePreview("segmentFill");
+        setSegmentTarget(target);
+        return;
       case "togglePinned":
         handleTogglePinned(target.id);
         return;

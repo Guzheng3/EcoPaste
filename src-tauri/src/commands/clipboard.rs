@@ -422,10 +422,15 @@ pub async fn paste_clipboard_item(
 
     if window::is_clipboard_window_pinned() {
         // 固定时窗口保持可见：macOS 上 panel 仍是 key window 会吞掉 ⌘V，需先 resign key
-        // 让键焦点回到前台 App 的窗口；Windows 剪贴板窗口 focusable=false，无需处理。
+        // 让键焦点回到前台 App 的窗口；Windows 可能处于编辑态（窗口临时可聚焦并
+        // 持有前台），需先退出编辑态把前台还给原 App，否则模拟按键被自己吞掉。
         #[cfg(target_os = "macos")]
         if let Err(err) = window::macos::resign_clipboard_panel_key(&app) {
             log::warn!("resign clipboard panel key before paste failed: {err:?}");
+        }
+        #[cfg(target_os = "windows")]
+        if let Err(err) = window::set_clipboard_window_editing(&app, false) {
+            log::warn!("exit clipboard editing before paste failed: {err:?}");
         }
     } else if let Err(err) = window::hide_window(&app, CLIPBOARD_WINDOW_LABEL) {
         log::warn!("hide clipboard window before paste failed: {err:?}");
@@ -434,6 +439,13 @@ pub async fn paste_clipboard_item(
     // hide / resign 都是 run_on_main_thread 异步派发；不等一拍，simulate_paste 的 ⌘V
     // 会赶在 panel 真正 order_out / 让出 key 前命中 panel 自己（webview 吞掉）。
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    // Windows：编辑态下剪贴板窗口临时可聚焦并持有前台，hide / 退出编辑态都在主线程异步
+    // 完成；若前台还没切走就发 Ctrl+V，按键被本应用吞掉——表现为「点了没粘贴但条目
+    // 已移到开头，手动 Ctrl+V 才能贴」。前台已是目标应用时零等待，最多 300ms 兜底。
+    #[cfg(target_os = "windows")]
+    window::windows::wait_foreground_left_app_window(&app, std::time::Duration::from_millis(300))
+        .await;
 
     crate::keystroke::simulate_paste()?;
 
@@ -518,6 +530,22 @@ pub async fn fill_selected_text(
 
     // 固定窗口时保持可见（与 paste 一致，不强行隐藏）；否则隐藏后让键焦点回前台再模拟粘贴。
     if window::is_clipboard_window_pinned() {
+        // macOS 维持现状（仅写回不注入按键）；Windows 可能处于编辑态（拆词弹窗输入框
+        // 持有前台），需先退出编辑态把前台还给原 App 再模拟，否则按键被本应用吞掉。
+        #[cfg(target_os = "windows")]
+        {
+            if let Err(err) = window::set_clipboard_window_editing(&app, false) {
+                log::warn!("exit clipboard editing before fill failed: {err:?}");
+            }
+            window::windows::wait_foreground_left_app_window(
+                &app,
+                std::time::Duration::from_millis(300),
+            )
+            .await;
+
+            crate::keystroke::simulate_paste()?;
+        }
+
         return Ok(());
     }
     if let Err(err) = window::hide_window(&app, CLIPBOARD_WINDOW_LABEL) {
@@ -855,6 +883,9 @@ fn compute_available_actions(item: &ClipboardItem) -> Vec<ClipboardAction> {
     }
 
     actions.push(ClipboardAction::ToggleFavorite);
+    if item.kind == ClipboardKind::Text {
+        actions.push(ClipboardAction::SegmentFill);
+    }
     actions.push(ClipboardAction::TogglePinned);
     actions.push(ClipboardAction::EditNote);
     actions.push(ClipboardAction::Delete);
@@ -1871,6 +1902,33 @@ mod tests {
         let actions = compute_available_actions(&text_item(None, false));
 
         assert!(!actions.contains(&ClipboardAction::SaveImage));
+    }
+
+    #[test]
+    fn text_actions_place_segment_fill_between_favorite_and_pinned() {
+        let actions = compute_available_actions(&text_item(None, false));
+
+        let favorite = actions
+            .iter()
+            .position(|action| *action == ClipboardAction::ToggleFavorite)
+            .expect("favorite action");
+        let segment = actions
+            .iter()
+            .position(|action| *action == ClipboardAction::SegmentFill)
+            .expect("segment fill action");
+        let pinned = actions
+            .iter()
+            .position(|action| *action == ClipboardAction::TogglePinned)
+            .expect("pinned action");
+
+        assert!(favorite < segment && segment < pinned);
+    }
+
+    #[test]
+    fn non_text_actions_exclude_segment_fill() {
+        let actions = compute_available_actions(&image_item());
+
+        assert!(!actions.contains(&ClipboardAction::SegmentFill));
     }
 
     #[test]

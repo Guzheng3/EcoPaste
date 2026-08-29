@@ -30,6 +30,7 @@ export type ClipboardAction =
   | "revealInFinder"
   | "revealInExplorer"
   | "toggleFavorite"
+  | "segmentFill"
   | "togglePinned"
   | "moveToGroup"
   | "editNote"
