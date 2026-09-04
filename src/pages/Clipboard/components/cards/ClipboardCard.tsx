@@ -79,24 +79,30 @@ const ClipboardCard: FC<ClipboardCardProps> = (props) => {
   const { kind, sourceAppId, subKind, sourceAppIconPath, sourceAppName } = item;
   const { t } = useTranslation("clipboard");
   const [hovered, setHovered] = useState(false);
+  // 来源图标路径有效但加载失败（文件缺失/URL 失效）时回落默认应用 logo，避免破图。
+  const [iconLoadFailed, setIconLoadFailed] = useState(false);
   const typeKey = subKind ?? kind;
   const typeLabel = t(`types.${typeKey}`);
   const body = renderBody(item, isLinkActive, onOpenLink);
   const showSensitiveIndicator = item.isSensitive && item.kind === "text";
   const showStatusIndicators = item.isPinned || showSensitiveIndicator;
-  const sourceAppIcon = sourceAppId ? (
-    <AssetImage
-      alt={sourceAppName}
-      className="size-4"
-      src={sourceAppIconPath}
-    />
-  ) : (
-    <img
-      alt="EcoPaste"
-      className="pointer-events-none size-4"
-      src={isMac ? "/logo-mac.png" : "/logo.png"}
-    />
-  );
+  // 来源图标固定尺寸不参与 flex 收缩（空间不足时先截断名称，图标不变形）；
+  // 图标路径缺失（提取失败）时回落到应用 logo，避免图标整个消失。
+  const sourceAppIcon =
+    sourceAppId && sourceAppIconPath && !iconLoadFailed ? (
+      <AssetImage
+        alt={sourceAppName}
+        className="size-4 shrink-0"
+        onError={() => setIconLoadFailed(true)}
+        src={sourceAppIconPath}
+      />
+    ) : (
+      <img
+        alt="EcoPaste"
+        className="pointer-events-none size-4 shrink-0"
+        src={isMac ? "/logo-mac.png" : "/logo.png"}
+      />
+    );
 
   const handleDragStart = async (event: DragEvent) => {
     event.preventDefault();
@@ -165,7 +171,19 @@ const ClipboardCard: FC<ClipboardCardProps> = (props) => {
             sourceAppIcon
           )}
 
-          <span className="truncate">{typeLabel}</span>
+          {sourceAppName ? (
+            <>
+              {/* 来源名：优先完整显示。空间不足时收缩为省略号（而非被 overflow-hidden
+                  硬裁），悬浮 title 显示全名。 */}
+              <span className="min-w-0 truncate" title={sourceAppName}>
+                {sourceAppName}
+              </span>
+              {/* 类型标签：固定宽度不参与收缩，避免挤压来源名；内容通常很短。 */}
+              <span className="shrink-0 text-ant-quaternary">{typeLabel}</span>
+            </>
+          ) : (
+            <span className="truncate">{typeLabel}</span>
+          )}
         </div>
 
         <ClipboardQuickActions

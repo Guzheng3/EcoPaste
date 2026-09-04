@@ -11,7 +11,6 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSnapshot } from "valtio";
 import {
-  createClipboardGroup,
   deleteClipboardGroup,
   listClipboardGroups,
   openPreferenceWithHighlight,
@@ -36,20 +35,13 @@ import type {
 import { cn } from "@/utils/cn";
 import { getModalApi } from "@/utils/feedback";
 
-type GroupModalMode = "create" | "edit";
-type MoreMenuAction = "manageGroups" | "newGroup";
+type MoreMenuAction = "manageGroups";
 type GroupMenuAction = "delete" | "edit" | "hide";
 type MoreMenuGroupKey = `group:${string}`;
 
 interface RangeGroupOption {
   labelKey: string;
   value: ClipboardRange;
-  icon: ClipboardGroupIconValue;
-}
-
-interface CategoryGroupOption {
-  labelKey: string;
-  value: ClipboardCategory;
   icon: ClipboardGroupIconValue;
 }
 
@@ -65,7 +57,6 @@ interface GroupSeparatorProps {
 }
 
 const RANGE_GROUP_OPTIONS: RangeGroupOption[] = [
-  { icon: "i-lets-icons:widget", labelKey: "groups.all", value: "all" },
   {
     icon: "i-lets-icons:star",
     labelKey: "groups.favorite",
@@ -73,7 +64,20 @@ const RANGE_GROUP_OPTIONS: RangeGroupOption[] = [
   },
 ];
 
-const CATEGORY_GROUP_OPTIONS: CategoryGroupOption[] = [
+type PrimaryGroupValue = ClipboardCategory | "all";
+
+interface PrimaryGroupOption {
+  labelKey: string;
+  value: PrimaryGroupValue;
+  icon: ClipboardGroupIconValue;
+}
+
+/**
+ * 主筛选 Tab：全部 与 文本/图片/文件 **并列**（单选其一）。
+ * 「全部」不包含分类，而是分类的一种未限定状态；「收藏」由 `range` 独立叠加。
+ */
+const PRIMARY_GROUP_OPTIONS: PrimaryGroupOption[] = [
+  { icon: "i-lets-icons:widget", labelKey: "groups.all", value: "all" },
   { icon: "i-lets-icons:file-dock", labelKey: "groups.text", value: "text" },
   { icon: "i-lets-icons:img-box", labelKey: "groups.image", value: "image" },
   {
@@ -91,15 +95,17 @@ const GROUP_MENU_ACTION = {
 
 const MORE_MENU_ACTION = {
   MANAGE_GROUPS: "manageGroups",
-  NEW_GROUP: "newGroup",
 } as const satisfies Record<string, MoreMenuAction>;
 
 const CUSTOM_GROUPS_SETTING_ID = "organizing.customGroups";
 
 const GROUP_BUTTON_BASE_CLASS =
   "flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-1.5 border-0 bg-transparent p-0 transition-colors";
-const GROUP_ICON_BUTTON_CLASS = GROUP_BUTTON_BASE_CLASS;
-const GROUP_BUTTON_WIDTH = 24;
+const GROUP_ICON_BUTTON_CLASS =
+  "flex h-9 w-12 shrink-0 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-1.5 border-0 bg-transparent px-0.5 py-1 transition-colors";
+const GROUP_BUTTON_LABEL_CLASS = "w-full truncate text-[10px] leading-none";
+const GROUP_ACTION_BUTTON_WIDTH = 24;
+const GROUP_FILTER_BUTTON_WIDTH = 48;
 const GROUP_BUTTON_GAP = 4;
 const GROUP_SEPARATOR_MARGIN = 4;
 
@@ -112,7 +118,6 @@ const Group: FC = () => {
 
   const [customGroups, setCustomGroups] = useState<ClipboardGroupRecord[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
-  const [modalMode, setModalMode] = useState<GroupModalMode>("create");
   const [visibleCustomGroupCount, setVisibleCustomGroupCount] = useState(
     Number.POSITIVE_INFINITY,
   );
@@ -196,18 +201,18 @@ const Group: FC = () => {
   }, [visibleCustomGroups.length]);
 
   /**
-   * 切换范围；范围必须始终保留一个选中项。
+   * 切换收藏范围开关；与主 Tab（全部/分类）正交，可叠加。
    */
-  const selectRange = (value: ClipboardRange) => {
-    clipboardViewState.range = value;
+  const toggleRange = (value: ClipboardRange) => {
+    clipboardViewState.range =
+      clipboardViewState.range === value ? "all" : value;
   };
 
   /**
-   * 切换分类；再次点击当前分类时取消。
+   * 切换到某个主 Tab；「全部」与「文本/图片/文件」并列单选。
    */
-  const toggleCategory = (value: ClipboardCategory) => {
-    clipboardViewState.category =
-      clipboardViewState.category === value ? null : value;
+  const selectPrimary = (value: PrimaryGroupValue) => {
+    clipboardViewState.category = value === "all" ? null : value;
   };
 
   /**
@@ -231,12 +236,12 @@ const Group: FC = () => {
     }
 
     if (type === "range" && isRangeGroup(value)) {
-      selectRange(value);
+      toggleRange(value);
       return;
     }
 
-    if (type === "category" && isCategoryGroup(value)) {
-      toggleCategory(value);
+    if (type === "primary" && isPrimaryGroup(value)) {
+      selectPrimary(value);
     }
   };
 
@@ -256,14 +261,14 @@ const Group: FC = () => {
   };
 
   /**
-   * 处理分组栏快捷键：Cmd/Ctrl+Q 切换范围，左右键切分类，Tab / Shift+Tab 仅在可见自定义分组间循环。
+   * 处理分组栏快捷键：Cmd/Ctrl+Q 切换收藏开关，左右键在主 Tab（全部/分类）间循环，Tab / Shift+Tab 仅在可见自定义分组间循环。
    */
   const handleKeyDown = (event: KeyboardEvent) => {
     const eventModifierPressed = event.metaKey || event.ctrlKey;
 
     if (eventModifierPressed && event.key.toLowerCase() === "q") {
       event.preventDefault();
-      toggleRange();
+      toggleRange("favorite");
 
       return;
     }
@@ -273,7 +278,7 @@ const Group: FC = () => {
       !shouldUseNativeHorizontalNavigation(event)
     ) {
       event.preventDefault();
-      selectAdjacentCategory(event.key === "ArrowLeft" ? -1 : 1);
+      selectAdjacentPrimary(event.key === "ArrowLeft" ? -1 : 1);
 
       return;
     }
@@ -296,45 +301,27 @@ const Group: FC = () => {
   useKeyboardEvent("keydown", handleKeyDown);
 
   /**
-   * 在全部 / 收藏范围之间循环切换，不影响分类与自定义分组筛选。
+   * 按方向键在主 Tab 序列「全部→文本→图片→文件」内循环。
    */
-  const toggleRange = () => {
-    clipboardViewState.range =
-      clipboardViewState.range === "all" ? "favorite" : "all";
-  };
-
-  /**
-   * 按方向键在固定分类序列内循环；未选分类时从方向对应的端点进入。
-   */
-  const selectAdjacentCategory = (direction: -1 | 1) => {
-    const options = CATEGORY_GROUP_OPTIONS.map((option) => {
+  const selectAdjacentPrimary = (direction: -1 | 1) => {
+    const options = PRIMARY_GROUP_OPTIONS.map((option) => {
       return option.value;
     });
-    const currentCategory = clipboardViewState.category;
-    const current = currentCategory ? options.indexOf(currentCategory) : -1;
+    const currentValue = clipboardViewState.category ?? "all";
+    const current = options.indexOf(currentValue);
     const startIndex = direction === 1 ? -1 : options.length;
     const nextIndex =
       (current === -1 ? startIndex + direction : current + direction) %
       options.length;
     const normalizedIndex = (nextIndex + options.length) % options.length;
 
-    clipboardViewState.category = options[normalizedIndex];
-  };
-
-  /**
-   * 打开新增分组弹框。
-   */
-  const openCreateModal = () => {
-    setModalMode("create");
-    setEditingGroup(null);
-    setModalOpen(true);
+    selectPrimary(options[normalizedIndex]);
   };
 
   /**
    * 打开编辑分组弹框。
    */
   const openEditModal = (record: ClipboardGroupRecord) => {
-    setModalMode("edit");
     setEditingGroup(record);
     setModalOpen(true);
   };
@@ -351,12 +338,6 @@ const Group: FC = () => {
    * 保存分组弹框内容。
    */
   const handleModalSubmit = async (input: ClipboardGroupInput) => {
-    if (modalMode === "create") {
-      await createClipboardGroup(input);
-      closeModal();
-      return;
-    }
-
     if (!editingGroup) return;
 
     await updateClipboardGroup(editingGroup.id, input);
@@ -393,13 +374,6 @@ const Group: FC = () => {
   };
 
   /**
-   * 执行新增分组动作。
-   */
-  const handleCreateGroupAction = () => {
-    openCreateModal();
-  };
-
-  /**
    * 打开偏好设置并定位到自定义分组管理项。
    */
   const openGroupPreference = async () => {
@@ -407,15 +381,10 @@ const Group: FC = () => {
   };
 
   /**
-   * 执行更多菜单动作：新增 / 管理分组，或切换到溢出的自定义分组。
+   * 执行更多菜单动作：管理分组，或切换到溢出的自定义分组。
    */
   const handleMoreMenuClick = async (info: { key: string }) => {
     const action = parseMoreMenuAction(info.key);
-    if (action === MORE_MENU_ACTION.NEW_GROUP) {
-      handleCreateGroupAction();
-      return;
-    }
-
     if (action === MORE_MENU_ACTION.MANAGE_GROUPS) {
       await openGroupPreference();
       return;
@@ -466,7 +435,6 @@ const Group: FC = () => {
   };
 
   const groupMenuItems = buildGroupActionMenuItems(t);
-  const createMenuItems = buildCreateMenuItems(t);
 
   /**
    * 记录溢出菜单中右键菜单所属分组。
@@ -511,53 +479,18 @@ const Group: FC = () => {
           })}
           type="button"
         >
-          <KeyHint hintKey="N" onKeyPress={handleCreateGroupAction}>
-            <i aria-hidden className="i-lucide:more-horizontal text-sm!" />
-          </KeyHint>
+          <i aria-hidden className="i-lucide:more-horizontal text-sm!" />
         </button>
       </Dropdown>
     );
   };
 
   /**
-   * 渲染独立新增按钮；存在溢出菜单时由菜单内新增入口承接。
-   */
-  const renderCreateButton = () => {
-    if (overflowCustomGroups.length > 0) return null;
-
-    return (
-      <Dropdown
-        menu={{
-          items: createMenuItems,
-          onClick: handleMoreMenuClick,
-        }}
-        tooltip={t("clipboard:groups.add")}
-        trigger={["contextMenu"]}
-      >
-        <button
-          className={cn(
-            GROUP_BUTTON_BASE_CLASS,
-            "text-ant-secondary hover:bg-ant-fill-tertiary",
-          )}
-          onClick={handleCreateGroupAction}
-          type="button"
-        >
-          <KeyHint hintKey="N" onKeyPress={handleCreateGroupAction}>
-            <i aria-hidden className="i-lucide:plus text-sm!" />
-          </KeyHint>
-        </button>
-      </Dropdown>
-    );
-  };
-
-  /**
-   * 渲染范围按钮。
+   * 渲染收藏范围开关按钮；单按钮，点击在开/关间切换。
    */
   const renderRangeButton = ({ labelKey, value, icon }: RangeGroupOption) => {
     const selected = range === value;
-    const nextRange =
-      range === "all" ? "favorite" : range === "favorite" ? "all" : void 0;
-    const showShortcutHint = nextRange === value;
+    const showShortcutHint = range === "all" && value === "favorite";
 
     return renderFilterButton({
       icon,
@@ -570,20 +503,20 @@ const Group: FC = () => {
   };
 
   /**
-   * 渲染分类按钮。
+   * 渲染主 Tab 按钮（全部|文本|图片|文件，并列单选）。
    */
-  const renderCategoryButton = ({
+  const renderPrimaryButton = ({
     labelKey,
     value,
     icon,
-  }: CategoryGroupOption) => {
-    const selected = category === value;
+  }: PrimaryGroupOption) => {
+    const selected = value === "all" ? category === null : category === value;
 
     return renderFilterButton({
       icon,
       label: t(`clipboard:${labelKey}`),
       selected,
-      type: "category",
+      type: "primary",
       value,
     });
   };
@@ -596,8 +529,8 @@ const Group: FC = () => {
     label: string;
     selected: boolean;
     showShortcutHint?: boolean;
-    type: "category" | "range";
-    value: ClipboardCategory | ClipboardRange;
+    type: "primary" | "range";
+    value: PrimaryGroupValue | ClipboardRange;
   }) => {
     const { icon, label, selected, showShortcutHint, type, value } = options;
 
@@ -620,6 +553,7 @@ const Group: FC = () => {
           ) : (
             <ClipboardGroupIcon icon={icon} selected={selected} />
           )}
+          <span className={GROUP_BUTTON_LABEL_CLASS}>{label}</span>
         </button>
       </Tooltip>
     );
@@ -634,7 +568,7 @@ const Group: FC = () => {
       >
         {RANGE_GROUP_OPTIONS.map(renderRangeButton)}
         <GroupSeparator />
-        {CATEGORY_GROUP_OPTIONS.map(renderCategoryButton)}
+        {PRIMARY_GROUP_OPTIONS.map(renderPrimaryButton)}
         <GroupSeparator separatorRef={customGroupAnchorRef} />
 
         {inlineCustomGroups.length > 0 && (
@@ -667,6 +601,9 @@ const Group: FC = () => {
                       icon={record.icon}
                       selected={selected}
                     />
+                    <span className={GROUP_BUTTON_LABEL_CLASS}>
+                      {record.name}
+                    </span>
                   </button>
                 </Dropdown>
               );
@@ -675,12 +612,11 @@ const Group: FC = () => {
         )}
 
         {renderMoreButton()}
-        {renderCreateButton()}
       </div>
 
       <ClipboardGroupModal
         group={editingGroup}
-        mode={modalMode}
+        mode="edit"
         onCancel={closeModal}
         onSubmit={handleModalSubmit}
         open={modalOpen}
@@ -790,7 +726,7 @@ function computeCustomGroupCapacity(
     toolbarRect.left +
     GROUP_SEPARATOR_MARGIN +
     GROUP_BUTTON_GAP;
-  const actionSlotWidth = GROUP_BUTTON_GAP + GROUP_BUTTON_WIDTH;
+  const actionSlotWidth = GROUP_BUTTON_GAP + GROUP_ACTION_BUTTON_WIDTH;
   const availableWidth = Math.max(
     0,
     toolbar.clientWidth - customStart - actionSlotWidth,
@@ -800,7 +736,7 @@ function computeCustomGroupCapacity(
     0,
     Math.floor(
       (availableWidth + GROUP_BUTTON_GAP) /
-        (GROUP_BUTTON_WIDTH + GROUP_BUTTON_GAP),
+        (GROUP_FILTER_BUTTON_WIDTH + GROUP_BUTTON_GAP),
     ),
   );
 }
@@ -833,22 +769,8 @@ function buildGroupActionMenuItems(
 }
 
 /**
- * 构建新增按钮右键菜单；左键继续新增，右键提供管理入口。
- */
-function buildCreateMenuItems(
-  t: TFunction<["clipboard", "common"]>,
-): DropdownMenuItems {
-  return [
-    {
-      icon: "i-lucide:settings-2",
-      key: MORE_MENU_ACTION.MANAGE_GROUPS,
-      label: t("clipboard:groups.manage"),
-    },
-  ];
-}
-
-/**
- * 构建更多菜单项：新增 / 管理入口 + 溢出分组快速入口。
+ * 构建更多菜单项：管理入口 + 溢出分组快速入口。
+ * 新增分组只在偏好设置的分组管理里提供。
  */
 function buildMoreMenuItems(
   groups: ClipboardGroupRecord[],
@@ -874,11 +796,6 @@ function buildMoreMenuItems(
   if (groupItems.length === 0) {
     return [
       {
-        icon: "i-lucide:plus",
-        key: MORE_MENU_ACTION.NEW_GROUP,
-        label: t("clipboard:groups.add"),
-      },
-      {
         icon: "i-lucide:settings-2",
         key: MORE_MENU_ACTION.MANAGE_GROUPS,
         label: t("clipboard:groups.manage"),
@@ -889,11 +806,6 @@ function buildMoreMenuItems(
   return [
     ...groupItems,
     { type: "divider" },
-    {
-      icon: "i-lucide:plus",
-      key: MORE_MENU_ACTION.NEW_GROUP,
-      label: t("clipboard:groups.add"),
-    },
     {
       icon: "i-lucide:settings-2",
       key: MORE_MENU_ACTION.MANAGE_GROUPS,
@@ -948,10 +860,10 @@ function isRangeGroup(value: unknown): value is ClipboardRange {
 }
 
 /**
- * 判断字符串是否为分类分组值。
+ * 判断字符串是否为主 Tab（全部/分类）值。
  */
-function isCategoryGroup(value: unknown): value is ClipboardCategory {
-  return CATEGORY_GROUP_OPTIONS.some((option) => {
+function isPrimaryGroup(value: unknown): value is PrimaryGroupValue {
+  return PRIMARY_GROUP_OPTIONS.some((option) => {
     return option.value === value;
   });
 }

@@ -23,6 +23,10 @@
     "searchGroupFavorites": "「{{group}}」分组下的收藏中未找到与「{{keyword}}」相关的记录",
     "searchHistory": "未找到「{{keyword}}」相关记录"
   },
+  "entities": {
+    "fill": "键入",
+    "open": "打开"
+  },
   "footer": {
     "shortcuts": "快捷键",
     "total": "共 {{count}} 项"
@@ -76,9 +80,29 @@
     "pinItem": "置顶",
     "pinItemActive": "取消置顶",
     "reveal": "在文件管理器中显示",
+    "segmentFill": "编辑",
     "sendEmail": "发送邮件",
     "star": "收藏",
     "starActive": "取消收藏"
+  },
+  "segmentFill": {
+    "editPlaceholder": "编辑文本内容，实时提取词块...",
+    "empty": "没有可拆分的词块",
+    "fill": "填入 {{count}} 个词块",
+    "noResults": "无提取结果",
+    "tabs": {
+      "emails": "邮箱",
+      "links": "链接",
+      "phones": "电话",
+      "words": "分词"
+    },
+    "title": "编辑",
+    "toggles": {
+      "emails": "邮箱",
+      "links": "链接",
+      "phones": "电话",
+      "words": "分词"
+    }
   },
   "shortcuts": {
     "closePreviewFilterWindow": "关闭预览 / 筛选 / 窗口",

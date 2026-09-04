@@ -1,42 +1,51 @@
 //! 历史清理后台任务：按 `clipboard.history.retention` + `maxCount` 定期裁剪。
 //!
-//! 启动即跑一次；之后按用户设置的清理周期触发，每次都从 `SettingsStore` 取最新配置——
-//! 用户在偏好里调时长 / 上限后不必重启即可生效。置顶与收藏项一律保留（由 [`cleanup_history`] 保证）。
+//! 调度为固定时间点：启动（开机）立即执行一次，之后每天跨过午夜 00:00 后再执行一次。
+//! 每次执行都从 `SettingsStore` 取最新配置，用户在偏好里调时长 / 上限后不必重启即可生效。
+//! 置顶与收藏项一律保留（由 [`cleanup_history`] 保证）。
+//! 敏感条目 TTL 在每个调度心跳里单独检查（见 [`run_sensitive_cleanup`]）。
+//! 图片没有独立生命周期：跟随数据库记录，记录删除时由调用方连带删盘上文件。
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use chrono::{DateTime, Duration as ChronoDuration, Utc};
+use chrono::{DateTime, Duration as ChronoDuration, Local, Utc};
 use serde_json::json;
 use tauri::{AppHandle, Emitter, Manager};
 
 use super::storage::ImageStore;
 use super::watcher::CLIPBOARD_UPDATED_EVENT;
-use crate::db::items::cleanup_history;
+use crate::db::items::{cleanup_history, cleanup_sensitive_expired};
 use crate::settings::{Retention, RetentionUnit, SettingsStore};
 
-/// 调度器检查设置与到期状态的频率；真正清理只在用户设置周期到期后执行。
+/// 调度器检查设置与到期状态的频率；敏感条目 TTL 可短至 1 小时，需每个心跳都检查。
 const SCHEDULER_TICK_INTERVAL: Duration = Duration::from_secs(60);
 
-/// 启动历史清理后台任务：启动立即清理一次，之后按设置周期到点清理。
+/// 启动后台清理任务：开机（启动）立即清理一次，之后每个调度心跳做敏感条目过期清理，
+/// 并仅当跨入新的一天（每晚午夜后第一个心跳）时执行历史容量清理。
 pub fn spawn(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
+        // 开机首次运行：立即清理一次（历史 + 敏感）。
         run_once(&app).await;
-        let mut last_cleanup_at = Instant::now();
+        run_sensitive_cleanup(&app).await;
+
+        // 开机已跑过，记录当天，避免同一天内重复；跨天后才触发下一次。
+        let mut last_cleanup_date = Local::now().date_naive();
+
         let mut ticker = tokio::time::interval(SCHEDULER_TICK_INTERVAL);
         ticker.tick().await;
 
         loop {
             ticker.tick().await;
-            let Some(interval) = cleanup_interval(&app) else {
-                continue;
-            };
 
-            if last_cleanup_at.elapsed() < interval {
-                continue;
+            // 敏感条目 TTL 可短至 1 小时，需在每个心跳都检查到期（DELETE 有索引，代价低）。
+            run_sensitive_cleanup(&app).await;
+
+            let today = Local::now().date_naive();
+            if today > last_cleanup_date {
+                // 跨入新的一天（每晚 00:00 后第一个心跳），执行一次历史清理。
+                run_once(&app).await;
+                last_cleanup_date = today;
             }
-
-            run_once(&app).await;
-            last_cleanup_at = Instant::now();
         }
     });
 }
@@ -71,16 +80,27 @@ async fn run_once(app: &AppHandle) {
     }
 }
 
-/// 读取当前清理周期。`0` 表示关闭周期性清理。
-fn cleanup_interval(app: &AppHandle) -> Option<Duration> {
-    let store = app.try_state::<SettingsStore>()?;
-    let hours = store.snapshot().clipboard.history.cleanup_interval_hours;
-
-    if hours == 0 {
-        return None;
+/// 删除 TTL 已过期的敏感条目（收藏项豁免，见 [`cleanup_sensitive_expired`]）。
+/// 失败只记日志；被删图片文件的落盘清理复用 [`remove_images`]。
+async fn run_sensitive_cleanup(app: &AppHandle) {
+    let pool = app.state::<crate::db::DatabaseState>().pool().await;
+    let now = Utc::now();
+    match cleanup_sensitive_expired(&pool, now).await {
+        Ok(outcome) if outcome.removed == 0 => {}
+        Ok(outcome) => {
+            if !outcome.image_files.is_empty() {
+                remove_images(app, &outcome.image_files);
+            }
+            log::info!("sensitive cleanup removed {} item(s)", outcome.removed);
+            if let Err(err) = app.emit(
+                CLIPBOARD_UPDATED_EVENT,
+                json!({ "cleanup": outcome.removed }),
+            ) {
+                log::warn!("emit sensitive cleanup event failed: {err}");
+            }
+        }
+        Err(err) => log::warn!("sensitive cleanup failed: {err}"),
     }
-
-    Some(Duration::from_secs(u64::from(hours) * 60 * 60))
 }
 
 /// 删除被清理图片记录的落盘文件（原图 + 缩略图）。`ImageStore` 未注册或单个文件删除失败

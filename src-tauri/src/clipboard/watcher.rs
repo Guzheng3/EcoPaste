@@ -21,14 +21,13 @@ use tauri::{AppHandle, Emitter, Manager};
 use super::app_store::AppIconStore;
 use super::apps_registry::AppsRegistry;
 use super::guard::WritebackGuard;
-use super::ingest::build_item_with_settings;
+use super::ingest::build_item_with_source;
 use super::read::ClipboardReader;
-use super::sound;
 use super::source::{self, FrontmostApp};
 use super::storage::ImageStore;
 use crate::db::apps::upsert_app;
-use crate::db::items::{upsert_item, UpsertResult};
-use crate::db::models::{ClipboardApp, ClipboardItem};
+use crate::db::items::{find_item_by_id, latest_content_hash, upsert_item, UpsertResult};
+use crate::db::models::{ClipboardApp, ClipboardItem, ClipboardKind};
 use crate::settings::SettingsStore;
 
 /// 剪贴板更新事件名。前端监听此事件后增量刷新 / 重新拉取列表。
@@ -89,7 +88,11 @@ pub fn materialize_source(
     src: FrontmostApp,
 ) -> ClipboardApp {
     if let Some(reg) = registry {
-        if let Some(cached) = reg.get(&src.id) {
+        if let Some(mut cached) = reg.get(&src.id) {
+            // 缓存命中时仍刷新 name（修复 exe 版本资源 bug 后名称可能变化，
+            // 缓存中的旧名字不应永久保留），保留已有 icon 避免重复抽取。
+            cached.name = src.name;
+            reg.insert_into_cache(cached.clone());
             return cached;
         }
     }
@@ -119,8 +122,28 @@ pub fn materialize_source(
     app
 }
 
+/// 复制成功反馈：外部复制入库时（真正新入库，或去重命中**非头部**条目——气泡同时
+/// 传达「复制成功 + 已有条目已移到历史开头」），只要设置开启 `feedback.copy_sound`，
+/// 就在屏幕右下角弹一个独立置顶小窗提示。与最近一条完全相同的重复复制不弹
+/// （判定见 [`persist_and_notify`]）。失败仅记日志，不阻断入库主流程。
+fn notify_copy_feedback(app: &AppHandle) {
+    let enabled = app
+        .try_state::<SettingsStore>()
+        .map(|s| s.snapshot().clipboard.feedback.copy_sound)
+        .unwrap_or(false);
+    if !enabled {
+        return;
+    }
+    crate::window::copied::show(app);
+}
+
 /// 去重入库 + emit「剪贴板更新」事件。监听回调与 `read_clipboard` 命令共用，
 /// 保证两条路径的入库语义与事件契约一致。失败仅记日志（监听场景无人接收 Result）。
+///
+/// 图片落盘发生在入库之前，本函数负责维持「一条记录 ↔ 一张落盘文件」不变量：
+/// 入库失败或去重命中（记录复用旧文件）时，删除本次刚落盘的未被引用文件（见
+/// [`remove_stored_image_file`]）；记录删除路径（手动删 / 历史清理 / 敏感过期）由
+/// 各自调用方连带删图。
 ///
 /// `source_app` 为 `Some` 时先 upsert apps 表再写 item，满足 FK 约束。
 /// 应用 upsert 失败不阻断条目入库——清掉 source_app_id 后继续，避免单次系统调用抽风丢内容。
@@ -140,8 +163,47 @@ pub async fn persist_and_notify(
             }
         }
     }
-    let result = upsert_item(pool, &item_to_write).await?;
-    sound::maybe_play_copy(app);
+    // 与最近一条完全相同的重复复制：去重命中的就是列表头部条目，upsert 只刷新
+    // 计数与 updated_at，列表无可见变化——「复制成功 + 已移到开头」气泡在此场景
+    // 没有信息量，跳过。查询失败时保守照弹，保持旧行为。
+    let skip_feedback = latest_content_hash(pool)
+        .await
+        .map(|latest| latest.is_some_and(|hash| hash == item_to_write.content_hash))
+        .unwrap_or(false);
+    let result = match upsert_item(pool, &item_to_write).await {
+        Ok(result) => result,
+        Err(err) => {
+            // 入库失败：本次落盘的图片文件不会有任何记录引用，连带删除避免孤儿堆积。
+            remove_stored_image_file(app, &item_to_write);
+            return Err(err);
+        }
+    };
+    // 图片去重命中：记录复用旧文件，本次刚落盘的文件未被引用，删掉——
+    // 保证一条记录只对应一张落盘文件（temp 文件名含 digest 前缀，与记录 content 必不同名，
+    // 这里的比较只是防御：万一同名说明文件正被记录使用，绝不能删）。
+    if result.deduplicated && item_to_write.kind == ClipboardKind::Image {
+        match find_item_by_id(pool, &result.id).await {
+            Ok(Some(existing)) if existing.content != item_to_write.content => {
+                remove_stored_image_file(app, &item_to_write);
+            }
+            Ok(_) => {}
+            Err(err) => {
+                log::warn!("find dedup target {} failed: {err}", result.id);
+            }
+        }
+    }
+    // notify_copy_feedback 内部会调用 copied::show → ensure_window，可能触发
+    // WebviewWindowBuilder::build()，必须在主线程执行。
+    // 由 watcher 线程经 async_runtime::spawn 调用，不在主线程，
+    // 故必须通过 run_on_main_thread 投递，否则随机崩溃。
+    if !skip_feedback {
+        let app_handle = app.clone();
+        if let Err(err) = app_handle.clone().run_on_main_thread(move || {
+            notify_copy_feedback(&app_handle);
+        }) {
+            log::warn!("dispatch notify_copy_feedback to main thread failed: {err}");
+        }
+    }
     if let Err(err) = app.emit(
         CLIPBOARD_UPDATED_EVENT,
         json!({
@@ -153,6 +215,20 @@ pub async fn persist_and_notify(
         log::warn!("emit {CLIPBOARD_UPDATED_EVENT} failed: {err}");
     }
     Ok(result)
+}
+
+/// 删除本次入库尝试落盘的图片文件（原图 + 缩略图 + 旧布局同名，幂等）。仅 image 有落盘
+/// 副作用，其他 kind 直接返回；`ImageStore` 未注册或删除失败只记日志——孤儿最坏占磁盘，
+/// 不影响功能。
+fn remove_stored_image_file(app: &AppHandle, item: &ClipboardItem) {
+    if item.kind != ClipboardKind::Image {
+        return;
+    }
+    if let Some(store) = app.try_state::<ImageStore>() {
+        if let Err(err) = store.remove(&item.content) {
+            log::warn!("remove unreferenced image {} failed: {err}", item.content);
+        }
+    }
 }
 
 /// 启动监听：注册 [`WritebackGuard`] / [`ImageStore`] / [`AppIconStore`] 到 Tauri `State`
@@ -296,6 +372,13 @@ impl ClipboardHandler for ClipboardChangeHandler {
             .map(|s| s.snapshot())
             .unwrap_or_default();
 
+        // 自身写回后 300ms 窗口内的变更事件直接跳过，不读取剪贴板：
+        // 避免与目标应用的粘贴（Ctrl+V/⌘V 需 OpenClipboard）竞争，
+        // 同时避免图片字节往返不保真导致 hash 抑制落空后重新入库。
+        if self.guard.recent_self_write() {
+            return;
+        }
+
         // 同步读取 + 转换（含图片落盘）：拿到 content_hash 才能判定是否为自身写回。
         let payload = match read_with_retry(&CLIPBOARD_READ_RETRY_DELAYS, || {
             self.reader.read_with_capture(&settings.clipboard.capture)
@@ -308,12 +391,13 @@ impl ClipboardHandler for ClipboardChangeHandler {
             }
         };
 
-        let mut item = match build_item_with_settings(
+        let mut item = match build_item_with_source(
             &self.store,
             &payload,
             &settings.clipboard.capture,
             &settings.clipboard.sensitive,
             settings.clipboard.content.copy_plain,
+            source.as_ref().map(|s| s.name.as_str()),
         ) {
             Ok(Some(item)) => item,
             Ok(None) => return,

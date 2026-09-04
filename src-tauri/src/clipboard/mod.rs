@@ -1,7 +1,9 @@
+mod app_name;
 mod app_store;
 mod apps_registry;
 mod cleanup;
 mod detect;
+mod entities;
 mod file_icon_store;
 mod guard;
 mod icon;
@@ -9,7 +11,7 @@ mod ingest;
 mod payload;
 mod read;
 mod secrets;
-mod sound;
+mod segment;
 mod source;
 mod storage;
 mod watcher;
@@ -20,16 +22,17 @@ pub use apps_registry::{
     add_app_from_path, delete_unreferenced_apps, refresh_running_apps, AppsRegistry,
 };
 pub use detect::sanitize_css_color;
+pub use entities::{extract_entities, ExtractedEntity};
 pub use file_icon_store::FileIconStore;
 pub use guard::WritebackGuard;
 pub use icon::{get_icon_cache_key, icon_png, DIR_CACHE_KEY};
 #[cfg(test)]
 pub use ingest::build_item;
-pub use ingest::build_item_with_settings;
+pub use ingest::{build_item_with_settings, build_item_with_source};
 pub use payload::{ClipboardPayload, ImagePayload, TextPayload};
 pub use read::ClipboardReader;
-pub use sound::play_copy_sound;
-pub use source::detect_frontmost;
+pub use segment::{segment_edit, SegmentEditResult};
+pub use source::{detect_frontmost, init_window_tracking};
 pub use storage::ImageStore;
 pub use watcher::{init, materialize_source, persist_and_notify, WatcherPause};
 pub use write::write_to_clipboard;

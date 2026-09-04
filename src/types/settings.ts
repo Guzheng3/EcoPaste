@@ -44,6 +44,7 @@ export type ItemAction =
   | "sendEmail"
   | "reveal"
   | "note"
+  | "segmentFill"
   | "star"
   | "pinItem"
   | "delete";
@@ -103,6 +104,7 @@ export interface Content {
   deleteFavoriteItemsOnlyInFavoriteGroup: boolean;
   autoFavorite: boolean;
   updateOnReuse: boolean;
+  extractEntities: boolean;
   sort: ClipboardItemSort;
   itemActions: ItemAction[];
   itemActionOrder: ItemAction[];
@@ -121,13 +123,14 @@ export interface Capture {
   image: boolean;
   files: boolean;
   maxTextMb: number;
-  maxImageMb: number;
   order: CaptureKind[];
 }
 
 export interface Sensitive {
   collectSecrets: boolean;
   redactSecrets: boolean;
+  /** 未收藏的敏感内容自动清除有效期（小时）。`0` 表示不自动清除。 */
+  sensitiveTtlHours: number;
 }
 
 export interface Retention {
@@ -138,7 +141,6 @@ export interface Retention {
 export interface History {
   retention: Retention;
   maxCount: number;
-  cleanupIntervalHours: number;
 }
 
 export interface Search {
@@ -212,6 +214,8 @@ export interface Settings {
   clipboard: Clipboard;
   onboarding: Onboarding;
   update: Update;
+  copyFeedbackMigrated?: boolean;
+  updateOnReuseMigrated?: boolean;
 }
 
 /**

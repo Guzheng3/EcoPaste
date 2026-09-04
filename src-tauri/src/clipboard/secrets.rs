@@ -6,7 +6,7 @@
 use regex::Regex;
 use std::sync::OnceLock;
 
-/// 判断文本是否包含高置信 secret/token，命中时整条剪贴板内容不入库。
+/// 判断文本是否包含高置信 secret/token。
 pub fn contains_secret(text: &str) -> bool {
     let value = text.trim();
     if value.is_empty() {
@@ -18,6 +18,72 @@ pub fn contains_secret(text: &str) -> bool {
         || has_aws_access_key(value)
         || has_jwt(value)
         || has_labeled_secret(value)
+}
+
+/// 判断文本是否包含高置信个人隐私信息（TieZ 思路：身份证、中国手机号、银行卡号）。
+///
+/// 刻意不做邮箱 / 手机号这类在日常剪贴板里极其常见的内容，避免把「刚给好友发个号码」
+/// 也判定为敏感、触发收割遮挡——只有结构上高置信、且确实需要防止留存的隐私才命中。
+///
+/// 注意：`regex` crate 不支持 look-around，边界隔离用 `\b` + 代码内前后字符校验实现，
+/// 避免把长数字串里的子串误判为手机号/银行卡，也避免 `Regex::new` 在运行时 panic。
+pub fn contains_personal_info(text: &str) -> bool {
+    let value = text.trim();
+    if value.is_empty() || value.len() > 5000 {
+        return false;
+    }
+
+    // 身份证号：18 位，含出生日期与校验位（末位 0-9/X）。要求边界隔离防误伤长串数字。
+    static ID_CARD_RE: OnceLock<Regex> = OnceLock::new();
+    if find_isolated(
+        value,
+        ID_CARD_RE.get_or_init(|| {
+            Regex::new(
+                r"\b[1-9]\d{5}(?:18|19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx]\b",
+            )
+            .expect("valid regex")
+        }),
+    ) {
+        return true;
+    }
+
+    // 中国手机号：1[3-9] 开头共 11 位，允许常见分隔符（每个数字前至多一个 `[-\s]`），
+    // 覆盖 13812345678 / 138-1234-5678 / 138 1234 5678 等写法。收紧到整串或标点包围，
+    // 避免把银行卡 / 长数字串误判为手机号。
+    static PHONE_RE: OnceLock<Regex> = OnceLock::new();
+    if find_isolated(
+        value,
+        PHONE_RE.get_or_init(|| {
+            Regex::new(r"\b(?:\+?86[-\s]?)?1[3-9](?:[-\s]?\d){9}\b").expect("valid regex")
+        }),
+    ) {
+        return true;
+    }
+
+    // 银行卡号：13–19 位连续数字或带少量空格的 Luhn 外观，边界隔离。
+    static BANK_CARD_RE: OnceLock<Regex> = OnceLock::new();
+    find_isolated(
+        value,
+        BANK_CARD_RE.get_or_init(|| Regex::new(r"\b\d{13,19}\b").expect("valid regex")),
+    )
+}
+
+/// 在 `text` 中查找 `re` 的任意匹配，且该匹配前后都不是数字（紧邻数字时视为长串的子串）。
+fn find_isolated(text: &str, re: &Regex) -> bool {
+    for m in re.find_iter(text) {
+        let left_clear = text[..m.start()]
+            .chars()
+            .next_back()
+            .is_none_or(|c| !c.is_ascii_digit());
+        let right_clear = text[m.end()..]
+            .chars()
+            .next()
+            .is_none_or(|c| !c.is_ascii_digit());
+        if left_clear && right_clear {
+            return true;
+        }
+    }
+    false
 }
 
 /// 识别 PEM/OpenSSH 私钥块，避免保存整段私钥。
@@ -95,7 +161,7 @@ fn has_labeled_secret(text: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::contains_secret;
+    use super::{contains_personal_info, contains_secret};
 
     #[test]
     fn detects_known_prefixed_tokens() {
@@ -163,5 +229,32 @@ mod tests {
         assert!(!contains_secret(
             "AKIA is just a word without enough characters"
         ));
+    }
+
+    #[test]
+    fn detects_id_card_numbers() {
+        // 18 位身份证号（含合法出生日期段）。
+        assert!(contains_personal_info("11010519491231002X"));
+        assert!(contains_personal_info(
+            "我的身份证号是 11010519491231002X，请保密"
+        ));
+        // 位数不足 / 普通长数字串不应命中。注意 13-19 位的数字串会命中银行卡规则，
+        // 这里用 12 位的不完整身份证来验证「结构不全不误伤」。
+        assert!(!contains_personal_info("12345678901"));
+        assert!(!contains_personal_info("110105194912"));
+    }
+
+    #[test]
+    fn detects_chinese_phone_numbers() {
+        assert!(contains_personal_info("13812345678"));
+        assert!(contains_personal_info("联系 139-1234-5678"));
+        assert!(!contains_personal_info("12345"));
+        assert!(!contains_personal_info("13812345"));
+    }
+
+    #[test]
+    fn detects_bank_card_numbers() {
+        assert!(contains_personal_info("6222021234567890123"));
+        assert!(!contains_personal_info("1234"));
     }
 }

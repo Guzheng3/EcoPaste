@@ -18,11 +18,12 @@
         "alwaysOnTop": true,
         "decorations": false,
         "focusable": false,
-        "height": 600,
+        "height": 700,
         "label": "clipboard",
         "maximizable": false,
-        "minHeight": 600,
+        "minHeight": 700,
         "minWidth": 360,
+        "resizable": false,
         "skipTaskbar": true,
         "title": "EcoPaste",
         "transparent": true,
@@ -41,7 +42,7 @@
   "bundle": {
     "active": true,
     "copyright": "Copyright 2026 ayangweb",
-    "createUpdaterArtifacts": true,
+    "createUpdaterArtifacts": false,
     "fileAssociations": [
       {
         "description": "EcoPaste history backup",
@@ -69,16 +70,6 @@
     "targets": ["nsis", "dmg", "app"]
   },
   "identifier": "com.ayangweb.eco-paste",
-  "plugins": {
-    "updater": {
-      "active": true,
-      "endpoints": ["https://releases.ecopaste.cn/update?channel=stable"],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDIwMzUzRkJCQUI3NjY4RgpSV1NQWnJlNisxTURBbFE2WWJpUlBJR0x0OXJOclVuUGlVYVhoNjJPZitYN0Q4V05GeW1aU2w0Zwo=",
-      "windows": {
-        "installMode": "passive"
-      }
-    }
-  },
   "productName": "EcoPaste",
   "version": "../package.json"
 }

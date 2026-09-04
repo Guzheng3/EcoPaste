@@ -42,6 +42,7 @@ export const ITEM_ACTION_ORDER: ItemAction[] = [
   "sendEmail",
   "reveal",
   "note",
+  "segmentFill",
   "star",
   "pinItem",
   "delete",
@@ -93,6 +94,10 @@ export const ITEM_ACTION_META: Record<ItemAction, ItemActionMeta> = {
   reveal: {
     icon: "i-lucide:folder-open",
     labelKey: "quickActions.reveal",
+  },
+  segmentFill: {
+    icon: "i-lucide:scissors",
+    labelKey: "quickActions.segmentFill",
   },
   sendEmail: {
     icon: "i-lucide:mail",
@@ -256,6 +261,8 @@ export function isItemActionAvailable(action: ItemAction, item: ClipboardItem) {
       );
     case "sendEmail":
       return hasClipboardAction(item, "sendEmail");
+    case "segmentFill":
+      return item.kind === "text";
     case "copy":
       return hasClipboardAction(item, "copy");
     case "delete":

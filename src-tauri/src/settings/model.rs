@@ -19,6 +19,12 @@ pub struct Settings {
     pub clipboard: Clipboard,
     pub onboarding: Onboarding,
     pub update: Update,
+    /// 内部一次性迁移标记：首次加载旧配置时把「复制成功提示」强制开启并落盘，
+    /// 之后再启动尊重用户手动开关，不再覆盖。前端不依赖该字段。
+    pub copy_feedback_migrated: bool,
+    /// 内部一次性迁移标记：首次加载旧配置时把「复用时更新记录」（粘贴置顶）强制开启，
+    /// 让旧版本沿用新默认行为；迁移后尊重用户手动开关。
+    pub update_on_reuse_migrated: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -164,8 +170,6 @@ pub struct Capture {
     pub files: bool,
     /// 文本最大收录大小，单位 MB。`0` = 不限制。
     pub max_text_mb: u32,
-    /// 图片最大收录大小，单位 MB。`0` = 不限制。
-    pub max_image_mb: u32,
     /// 剪贴板同时提供多种表示时的采集优先级。
     pub order: Vec<CaptureKind>,
 }
@@ -179,7 +183,6 @@ impl Default for Capture {
             image: true,
             files: true,
             max_text_mb: 4,
-            max_image_mb: 100,
             order: CaptureKind::default_order(),
         }
     }
@@ -189,11 +192,6 @@ impl Capture {
     /// 返回文本最大收录字节数；`None` 表示不限制。
     pub fn max_text_bytes(&self) -> Option<u64> {
         mb_to_bytes(self.max_text_mb)
-    }
-
-    /// 返回图片最大收录字节数；`None` 表示不限制。
-    pub fn max_image_bytes(&self) -> Option<u64> {
-        mb_to_bytes(self.max_image_mb)
     }
 
     /// 返回去重且补齐缺失项后的采集顺序，避免配置文件里手改出重复项后影响读取。
@@ -251,7 +249,7 @@ impl CaptureKind {
     }
 }
 
-/// 隐私保护设置。命中规则的内容可分别控制是否收录、是否脱敏展示。
+/// 隐私保护设置。命中的内容可分别控制是否收录、是否脱敏展示。
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Sensitive {
@@ -259,6 +257,9 @@ pub struct Sensitive {
     pub collect_secrets: bool,
     /// 已保存的敏感内容是否在列表与预览中脱敏展示。
     pub redact_secrets: bool,
+    /// 未收藏的敏感内容自动清除的有效期（小时）。`0` = 不自动清除。
+    /// 手动收藏的敏感条目豁免清除，始终保留。
+    pub sensitive_ttl_hours: u32,
 }
 
 impl Default for Sensitive {
@@ -266,6 +267,7 @@ impl Default for Sensitive {
         Self {
             collect_secrets: true,
             redact_secrets: true,
+            sensitive_ttl_hours: 1,
         }
     }
 }
@@ -354,6 +356,8 @@ pub struct Content {
     pub auto_favorite: bool,
     /// 从历史中复制 / 粘贴时，是否刷新使用次数与 `updated_at`。
     pub update_on_reuse: bool,
+    /// 文本卡片是否自动提取链接 / 邮箱 / 手机号 / QQ 并以实体下拉框展示。
+    pub extract_entities: bool,
     /// 历史列表默认排序，和 `ClipboardItemQuery.sort` 使用同一套契约字面量。
     pub sort: ClipboardItemSort,
     /// 列表项悬停操作按钮（仅保存已启用项，顺序按 `item_action_order` 过滤）。
@@ -379,11 +383,14 @@ impl Default for Content {
             delete_pinned_confirm: true,
             delete_favorite_items_only_in_favorite_group: true,
             auto_favorite: false,
-            update_on_reuse: false,
+            // 默认开启：从历史复制 / 粘贴时置顶并计一次使用（用户要求粘贴后原条目移到开头）。
+            update_on_reuse: true,
+            extract_entities: true,
             sort: ClipboardItemSort::UpdatedAt,
             item_actions: vec![
                 ItemAction::Copy,
                 ItemAction::Star,
+                ItemAction::SegmentFill,
                 ItemAction::PinItem,
                 ItemAction::Delete,
             ],
@@ -397,6 +404,7 @@ impl Default for Content {
                 ItemAction::SendEmail,
                 ItemAction::Reveal,
                 ItemAction::Note,
+                ItemAction::SegmentFill,
                 ItemAction::Star,
                 ItemAction::PinItem,
                 ItemAction::Delete,
@@ -470,6 +478,7 @@ pub enum ItemAction {
     SendEmail,
     Reveal,
     Note,
+    SegmentFill,
     Star,
     PinItem,
     Delete,
@@ -488,7 +497,7 @@ impl Default for Preview {
         Self {
             hover_enabled: false,
             hover_delay_ms: PreviewHoverDelayMs::Ms500,
-            space_enabled: true,
+            space_enabled: false,
         }
     }
 }
@@ -502,14 +511,26 @@ pub enum PreviewHoverDelayMs {
     Ms1000,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default, rename_all = "camelCase")]
 pub struct History {
     pub retention: Retention,
     /// 最多保留条数。`0` = 不限。
     pub max_count: u32,
-    /// 自动清理周期（小时）。`0` = 关闭周期清理，但启动时仍清理一次。
-    pub cleanup_interval_hours: u32,
+}
+
+impl Default for History {
+    fn default() -> Self {
+        Self {
+            // 默认保留 30 天，超过后由固定调度（开机 + 每晚午夜）自动清除。
+            retention: Retention {
+                value: 30,
+                unit: RetentionUnit::Days,
+            },
+            // 默认不限制最大条数。
+            max_count: 0,
+        }
+    }
 }
 
 /// 历史保留时长。`unit = Forever` 时忽略 `value`。
@@ -619,10 +640,17 @@ pub enum WindowPosition {
     Center,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Feedback {
     pub copy_sound: bool,
+}
+
+impl Default for Feedback {
+    fn default() -> Self {
+        // 复制成功提示默认开启，与原「复制音效」默认行为一致。
+        Self { copy_sound: true }
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]

@@ -15,6 +15,10 @@ export const WINDOW_LABEL = {
    */
   CONTEXT_SUBMENU: "context-submenu",
   /**
+   * 复制成功小气泡窗口：与主窗口解耦的置顶透明弹窗。
+   */
+  COPIED: "copied",
+  /**
    * 首次启动引导窗口。
    */
   ONBOARDING: "onboarding",
@@ -26,8 +30,4 @@ export const WINDOW_LABEL = {
    * 剪贴板系统级预览 overlay 窗口。
    */
   PREVIEW: "clipboard-preview",
-  /**
-   * 软件更新窗口。
-   */
-  UPDATE: "update",
 } as const;

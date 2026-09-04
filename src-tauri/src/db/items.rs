@@ -10,7 +10,7 @@ use crate::db::models::{
 
 const SELECT_ITEM: &str = "SELECT id, kind, sub_kind, group_id, source_app_id, content, \
      content_hash, search_text, summary, file_types, size, width, height, use_count, is_favorite, is_pinned, \
-     is_sensitive, platform, note, created_at, updated_at FROM clipboard_items";
+     is_sensitive, sensitive_expires_at, platform, note, created_at, updated_at FROM clipboard_items";
 
 /// 列表/单条刷新场景的精简 SELECT：text 类型条目的 `content` 与 `search_text` 一律置空，
 /// 由前端用 `summary` 渲染。HTML/RTF/长纯文本可能很大（用户复制整段文档），
@@ -28,6 +28,7 @@ const LIST_SELECT_ITEM: &str = "SELECT clipboard_items.id, clipboard_items.kind,
      clipboard_items.width, clipboard_items.height, clipboard_items.use_count, \
      clipboard_items.is_favorite, clipboard_items.is_pinned, \
      clipboard_items.is_sensitive, \
+     clipboard_items.sensitive_expires_at, \
      clipboard_items.platform, clipboard_items.note, \
      clipboard_items.created_at, clipboard_items.updated_at, \
      clipboard_apps.name AS source_app_name, \
@@ -100,14 +101,25 @@ pub async fn find_item_by_content_hash(
     Ok(item)
 }
 
+/// 查询当前最近一条记录（`updated_at` 最大，即默认排序列表的首行）的 `content_hash`。
+/// 供复制反馈判断「本次复制内容是否与最近一条完全相同」——相同时列表无可见变化。
+pub async fn latest_content_hash(pool: &SqlitePool) -> Result<Option<String>> {
+    let row: Option<(String,)> =
+        sqlx::query_as("SELECT content_hash FROM clipboard_items ORDER BY updated_at DESC LIMIT 1")
+            .fetch_optional(pool)
+            .await
+            .context("failed to load latest content hash")?;
+    Ok(row.map(|(hash,)| hash))
+}
+
 /// 插入一条剪贴板记录（不做去重；去重请走 [`upsert_item`]）。
 pub async fn insert_item(pool: &SqlitePool, item: &ClipboardItem) -> Result<()> {
     sqlx::query(
         "INSERT INTO clipboard_items \
          (id, kind, sub_kind, group_id, source_app_id, content, content_hash, search_text, \
-          summary, file_types, size, width, height, use_count, is_favorite, is_pinned, is_sensitive, platform, note, \
+          summary, file_types, size, width, height, use_count, is_favorite, is_pinned, is_sensitive, sensitive_expires_at, platform, note, \
           created_at, updated_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(item.id.as_str())
     .bind(item.kind)
@@ -126,6 +138,7 @@ pub async fn insert_item(pool: &SqlitePool, item: &ClipboardItem) -> Result<()> 
     .bind(item.is_favorite)
     .bind(item.is_pinned)
     .bind(item.is_sensitive)
+    .bind(item.sensitive_expires_at)
     .bind(item.platform)
     .bind(item.note.as_deref())
     .bind(item.created_at)
@@ -191,6 +204,7 @@ pub async fn find_item_for_list_by_id(
 }
 
 /// 翻转 `is_favorite`（收藏 / 取消收藏），返回翻转后的新状态。
+/// 收藏时清空敏感条目的过期时间（豁免自动清除），取消收藏不恢复。
 pub async fn toggle_item_favorite(pool: &SqlitePool, id: &str) -> Result<bool> {
     let new_value: bool = sqlx::query_scalar(
         "UPDATE clipboard_items SET is_favorite = NOT is_favorite WHERE id = ? RETURNING is_favorite",
@@ -199,16 +213,23 @@ pub async fn toggle_item_favorite(pool: &SqlitePool, id: &str) -> Result<bool> {
     .fetch_one(pool)
     .await
     .context("failed to toggle clipboard item favorite")?;
+
+    if new_value {
+        clear_sensitive_expiry_on_favorite(pool, id, true).await?;
+    }
     Ok(new_value)
 }
 
 /// 幂等地将 `is_favorite` 置为 true（已收藏的无变化）。auto-favorite 场景用。
+/// 收藏时清空敏感条目的过期时间（豁免自动清除）。
 pub async fn mark_item_favorite(pool: &SqlitePool, id: &str) -> Result<()> {
     sqlx::query("UPDATE clipboard_items SET is_favorite = 1 WHERE id = ?")
         .bind(id)
         .execute(pool)
         .await
         .context("failed to mark clipboard item favorite")?;
+
+    clear_sensitive_expiry_on_favorite(pool, id, true).await?;
     Ok(())
 }
 
@@ -361,6 +382,47 @@ fn absorb_deleted(outcome: &mut CleanupOutcome, rows: Vec<(ClipboardKind, String
         rows.into_iter()
             .filter_map(|(kind, content)| image_file_name(kind, content)),
     );
+}
+
+/// 清理已过期的敏感条目：`sensitive_expires_at` 非空且早于 `now` 的未收藏条目被删除。
+/// 收藏项豁免（用户手动收藏 = 主动想保留，不受 TTL 约束）。返回删除行数 + 被删图片文件名。
+pub async fn cleanup_sensitive_expired(
+    pool: &SqlitePool,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<CleanupOutcome> {
+    let rows = sqlx::query_as::<_, (ClipboardKind, String)>(
+        "DELETE FROM clipboard_items \
+         WHERE is_favorite = 0 \
+           AND sensitive_expires_at IS NOT NULL \
+           AND sensitive_expires_at < ? \
+         RETURNING kind, content",
+    )
+    .bind(now)
+    .fetch_all(pool)
+    .await
+    .context("failed to cleanup expired sensitive items")?;
+
+    let mut outcome = CleanupOutcome::default();
+    absorb_deleted(&mut outcome, rows);
+    Ok(outcome)
+}
+
+/// 收藏敏感条目时清空其过期时间（豁免自动清除）。仅在 `now_favorite = true` 时清除，
+/// 取消收藏不恢复过期（条目已因收藏豁免而永久保留）。
+pub async fn clear_sensitive_expiry_on_favorite(
+    pool: &SqlitePool,
+    id: &str,
+    now_favorite: bool,
+) -> Result<()> {
+    if !now_favorite {
+        return Ok(());
+    }
+    sqlx::query("UPDATE clipboard_items SET sensitive_expires_at = NULL WHERE id = ?")
+        .bind(id)
+        .execute(pool)
+        .await
+        .context("failed to clear sensitive expiry on favorite")?;
+    Ok(())
 }
 
 /// 清空记录，返回删除行数与被删图片文件名；未显式删除的收藏 / 置顶项会保留。
@@ -588,6 +650,7 @@ mod tests {
             is_favorite: false,
             is_pinned: false,
             is_sensitive: false,
+            sensitive_expires_at: None,
             platform: Platform::Macos,
             note: None,
             created_at: ts,

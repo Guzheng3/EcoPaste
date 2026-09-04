@@ -10,6 +10,7 @@
 //! - 菜单项点击：前端直接 emit `clipboard://menu-action` 给剪贴板窗口，业务派发与
 //!   macOS 路径走同一套。
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{LazyLock, Mutex};
 
 use tauri::{
@@ -46,6 +47,8 @@ const SURFACE_BORDER: u32 = 2;
 const SUBMENU_GAP: u32 = 4;
 
 static CONTEXT_BUILD_LOCK: Mutex<()> = Mutex::new(());
+/// 是否已完成窗口预热，避免剪贴板每次显示都重复触发建窗。
+static CONTEXT_PREWARMED: AtomicBool = AtomicBool::new(false);
 static CONTEXT_MENU_PAYLOAD: LazyLock<Mutex<Option<ContextMenuShowPayload>>> =
     LazyLock::new(|| Mutex::new(None));
 static CONTEXT_SUBMENU_PAYLOAD: LazyLock<Mutex<Option<ShowContextSubmenuInput>>> =
@@ -56,6 +59,32 @@ static CONTEXT_SUBMENU_PAYLOAD: LazyLock<Mutex<Option<ShowContextSubmenuInput>>>
 /// 菜单窗口改为按需创建，避免应用启动时加载隐藏 WebView。
 pub fn init(app: &AppHandle) {
     let _ = app;
+}
+
+/// 后台预热两个右键菜单窗口。
+///
+/// 首次右键需要现场建窗（加载一个完整 WebView），有明显卡顿；这里在剪贴板窗口
+/// 首次显示后延迟建好隐藏窗口（不 `show`），右键时仅 `set_size/set_position/emit/show`，
+/// 从而让首次右键也瞬时响应。窗口已建则跳过。
+pub fn prewarm(app: &AppHandle) {
+    if CONTEXT_PREWARMED.swap(true, Ordering::Relaxed) {
+        return;
+    }
+
+    let app = app.clone();
+    std::thread::spawn(move || {
+        // 先让剪贴板窗口完成首屏渲染，避免争抢主线程建窗导致其显示变慢。
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let app_inner = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            if let Err(err) = build_context_menu_window(&app_inner) {
+                log::warn!("prewarm context menu window failed: {err}");
+            }
+            if let Err(err) = build_context_submenu_window(&app_inner) {
+                log::warn!("prewarm context submenu window failed: {err}");
+            }
+        });
+    });
 }
 
 /// 按需重建一级右键菜单窗口。

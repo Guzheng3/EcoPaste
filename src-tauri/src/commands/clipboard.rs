@@ -5,19 +5,21 @@ use std::path::Path;
 use std::sync::Arc;
 
 use chrono::{DateTime, Datelike, Local, Utc};
+use clipboard_rs::{Clipboard, ClipboardContext};
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::clipboard::{
-    add_app_from_path, build_item_with_settings, delete_unreferenced_apps, detect_frontmost,
-    materialize_source, persist_and_notify, refresh_running_apps, sanitize_css_color, AppIconStore,
-    AppsRegistry, ClipboardReader, FileIconStore, ImageStore, WritebackGuard,
+    add_app_from_path, build_item_with_source, delete_unreferenced_apps, detect_frontmost,
+    extract_entities, materialize_source, persist_and_notify, refresh_running_apps,
+    sanitize_css_color, segment_edit, AppIconStore, AppsRegistry, ClipboardReader, ExtractedEntity,
+    FileIconStore, ImageStore, WritebackGuard,
 };
 use crate::core::{AppError, Result};
 use crate::db::items::{
-    clear_items, find_item_by_id, find_item_for_list_by_id, increment_item_use_count,
+    clear_items, content_hash, find_item_by_id, find_item_for_list_by_id, increment_item_use_count,
 };
 use crate::db::models::{
     ClipboardAction, ClipboardApp, ClipboardGroup, ClipboardItem, ClipboardItemPage,
@@ -90,12 +92,13 @@ pub async fn read_clipboard(
         let settings = app.state::<SettingsStore>().snapshot();
         let payload = reader.read_with_capture(&settings.clipboard.capture)?;
         let item = match payload {
-            Some(payload) => build_item_with_settings(
+            Some(payload) => build_item_with_source(
                 &store,
                 &payload,
                 &settings.clipboard.capture,
                 &settings.clipboard.sensitive,
                 settings.clipboard.content.copy_plain,
+                source.as_ref().map(|s| s.name.as_str()),
             )?,
             None => None,
         };
@@ -351,12 +354,6 @@ pub async fn get_clipboard_preview_payload(
     Ok(Some(payload))
 }
 
-/// 播放一次复制成功提示音，用于偏好设置页试听。
-#[tauri::command]
-pub async fn play_copy_sound() {
-    crate::clipboard::play_copy_sound();
-}
-
 /// 把指定历史记录写回系统剪贴板（不触发模拟粘贴）。
 /// `plain = true` 强制纯文本，剥离 HTML/RTF。
 ///
@@ -425,10 +422,15 @@ pub async fn paste_clipboard_item(
 
     if window::is_clipboard_window_pinned() {
         // 固定时窗口保持可见：macOS 上 panel 仍是 key window 会吞掉 ⌘V，需先 resign key
-        // 让键焦点回到前台 App 的窗口；Windows 剪贴板窗口 focusable=false，无需处理。
+        // 让键焦点回到前台 App 的窗口；Windows 可能处于编辑态（窗口临时可聚焦并
+        // 持有前台），需先退出编辑态把前台还给原 App，否则模拟按键被自己吞掉。
         #[cfg(target_os = "macos")]
         if let Err(err) = window::macos::resign_clipboard_panel_key(&app) {
             log::warn!("resign clipboard panel key before paste failed: {err:?}");
+        }
+        #[cfg(target_os = "windows")]
+        if let Err(err) = window::set_clipboard_window_editing(&app, false) {
+            log::warn!("exit clipboard editing before paste failed: {err:?}");
         }
     } else if let Err(err) = window::hide_window(&app, CLIPBOARD_WINDOW_LABEL) {
         log::warn!("hide clipboard window before paste failed: {err:?}");
@@ -437,6 +439,13 @@ pub async fn paste_clipboard_item(
     // hide / resign 都是 run_on_main_thread 异步派发；不等一拍，simulate_paste 的 ⌘V
     // 会赶在 panel 真正 order_out / 让出 key 前命中 panel 自己（webview 吞掉）。
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    // Windows：编辑态下剪贴板窗口临时可聚焦并持有前台，hide / 退出编辑态都在主线程异步
+    // 完成；若前台还没切走就发 Ctrl+V，按键被本应用吞掉——表现为「点了没粘贴但条目
+    // 已移到开头，手动 Ctrl+V 才能贴」。前台已是目标应用时零等待，最多 300ms 兜底。
+    #[cfg(target_os = "windows")]
+    window::windows::wait_foreground_left_app_window(&app, std::time::Duration::from_millis(300))
+        .await;
 
     crate::keystroke::simulate_paste()?;
 
@@ -453,6 +462,106 @@ pub async fn paste_clipboard_item(
     }
 
     Ok(())
+}
+
+/// 编辑文本（前端「编辑」弹窗入口）：按 id 读一条文本记录，返回拆词词块、链接、邮箱、手机号。
+/// 非文本记录返回空结果。规则见 `crate::clipboard::segment`。
+#[tauri::command]
+pub async fn segment_clipboard_item(
+    db: State<'_, DatabaseState>,
+    id: String,
+) -> Result<crate::clipboard::SegmentEditResult> {
+    let pool = db.pool().await;
+    let item = find_item_by_id(&pool, &id)
+        .await?
+        .ok_or_else(|| AppError::Clipboard(format!("clipboard item not found: {id}")))?;
+
+    if item.kind != ClipboardKind::Text {
+        return Ok(crate::clipboard::SegmentEditResult {
+            text: String::new(),
+            blocks: Vec::new(),
+            links: Vec::new(),
+            emails: Vec::new(),
+            phones: Vec::new(),
+        });
+    }
+
+    let text = item.search_text.clone().unwrap_or(item.content);
+    Ok(segment_edit(&text))
+}
+
+/// 实体提取（前端实体下拉框入口）：按 id 读一条文本记录，返回其中提取的链接 / 邮箱 / 手机号 / QQ。
+/// 非文本记录返回空数组。规则见 `crate::clipboard::entities`，已按出现顺序去重。
+#[tauri::command]
+pub async fn extract_item_entities(
+    db: State<'_, DatabaseState>,
+    id: String,
+) -> Result<Vec<ExtractedEntity>> {
+    let pool = db.pool().await;
+    let item = find_item_by_id(&pool, &id)
+        .await?
+        .ok_or_else(|| AppError::Clipboard(format!("clipboard item not found: {id}")))?;
+
+    if item.kind != ClipboardKind::Text {
+        return Ok(Vec::new());
+    }
+
+    let text = item.search_text.clone().unwrap_or(item.content);
+    Ok(extract_entities(&text))
+}
+
+/// 填入：把已选词块拼接文本写入系统剪贴板，隐藏剪贴板窗口后模拟 ⌘V / Ctrl+V 键入前台输入框。
+/// 与 `paste_clipboard_item` 复用同一套「写回 + 抑制回环 + 粘贴」时序。
+#[tauri::command]
+pub async fn fill_selected_text(
+    app: AppHandle,
+    guard: State<'_, Arc<WritebackGuard>>,
+    text: String,
+) -> Result<()> {
+    let text = text.trim().to_owned();
+    if text.is_empty() {
+        return Ok(());
+    }
+
+    // 写系统剪贴板并用 guard 抑制回环，避免 watcher 把本次填入误判为新内容再入一条。
+    let ctx = ClipboardContext::new().map_err(clip_err)?;
+    guard.suppress(content_hash(ClipboardKind::Text, &text));
+    ctx.set_text(text).map_err(clip_err)?;
+
+    // 固定窗口时保持可见（与 paste 一致，不强行隐藏）；否则隐藏后让键焦点回前台再模拟粘贴。
+    if window::is_clipboard_window_pinned() {
+        // macOS 维持现状（仅写回不注入按键）；Windows 可能处于编辑态（拆词弹窗输入框
+        // 持有前台），需先退出编辑态把前台还给原 App 再模拟，否则按键被本应用吞掉。
+        #[cfg(target_os = "windows")]
+        {
+            if let Err(err) = window::set_clipboard_window_editing(&app, false) {
+                log::warn!("exit clipboard editing before fill failed: {err:?}");
+            }
+            window::windows::wait_foreground_left_app_window(
+                &app,
+                std::time::Duration::from_millis(300),
+            )
+            .await;
+
+            crate::keystroke::simulate_paste()?;
+        }
+
+        return Ok(());
+    }
+    if let Err(err) = window::hide_window(&app, CLIPBOARD_WINDOW_LABEL) {
+        log::warn!("hide clipboard window before fill failed: {err:?}");
+    }
+
+    // hide 是 run_on_main_thread 异步派发；不等一拍，模拟的 ⌘V 会赶在 panel 让出键焦点前命中 panel 自己。
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    crate::keystroke::simulate_paste()?;
+
+    Ok(())
+}
+
+fn clip_err<E: std::fmt::Display>(err: E) -> AppError {
+    AppError::Clipboard(err.to_string())
 }
 
 /// 计算复制写回是否强制走纯文本；默认复制纯文本只作用于文本记录。
@@ -581,7 +690,10 @@ pub async fn get_clipboard_item(
 }
 
 /// 为 image 条目补齐缩略图绝对路径，前端可直接渲染。
-/// 历史脏数据（非 `<hash>.png`）或缩略图生成失败时降级为 `None`，不影响列表返回。
+/// 缩略图缺失时在 blocking 线程池同步生成（成功后落盘缓存，仅首次有成本），
+/// 避免把原图（可能是数 MB 的大图）交给 webview 渲染线程解码、卡住列表 IPC，
+/// 表现为「主列表一直转圈」。生成失败降级回原图路径；历史脏数据（非 `<hash>.png`）
+/// 降级为 `None`，均不影响列表返回。
 async fn attach_image_thumbnail_path(store: &ImageStore, item: &mut ClipboardItem) -> Result<()> {
     if item.kind != ClipboardKind::Image {
         return Ok(());
@@ -594,26 +706,32 @@ async fn attach_image_thumbnail_path(store: &ImageStore, item: &mut ClipboardIte
 
     let file_name = item.content.clone();
     let thumb_path = store.thumbnail_path(&file_name);
-    let thumb_exists = thumb_path.exists();
 
-    let immediate_path = if thumb_exists {
-        thumb_path
-    } else {
-        store.origin_path(&file_name)
-    };
-
-    item.image_thumbnail_path = immediate_path.to_str().map(str::to_owned);
-
-    // 缩略图不存在时后台异步预热，避免把大图缩放阻塞在列表/单条查询的返回路径上。
-    if !thumb_exists {
-        let store = store.clone();
-        tauri::async_runtime::spawn_blocking(move || {
-            if let Err(err) = store.ensure_thumbnail(&file_name) {
-                log::warn!("ensure image thumbnail failed for {:?}: {err}", file_name);
-            }
-        });
+    if thumb_path.exists() {
+        item.image_thumbnail_path = thumb_path.to_str().map(str::to_owned);
+        return Ok(());
     }
 
+    let gen_store = store.clone();
+    let gen_file_name = file_name.clone();
+    let generated = tauri::async_runtime::spawn_blocking(move || {
+        gen_store.ensure_thumbnail(&gen_file_name)
+    })
+    .await;
+
+    let path = match generated {
+        Ok(Ok(path)) => path,
+        Ok(Err(err)) => {
+            log::warn!("ensure image thumbnail failed for {file_name:?}: {err}");
+            store.origin_path(&file_name)
+        }
+        Err(err) => {
+            log::warn!("thumbnail task join failed: {err}");
+            store.origin_path(&file_name)
+        }
+    };
+
+    item.image_thumbnail_path = path.to_str().map(str::to_owned);
     Ok(())
 }
 
@@ -749,7 +867,7 @@ fn compute_available_actions(item: &ClipboardItem) -> Vec<ClipboardAction> {
     match item.kind {
         ClipboardKind::Text => actions.push(ClipboardAction::PasteAsPlainText),
         ClipboardKind::Files => actions.push(ClipboardAction::PasteAsPath),
-        ClipboardKind::Image => {}
+        ClipboardKind::Image => actions.push(ClipboardAction::PasteAsPath),
     }
 
     actions.push(ClipboardAction::Copy);
@@ -763,8 +881,9 @@ fn compute_available_actions(item: &ClipboardItem) -> Vec<ClipboardAction> {
         _ => {}
     }
 
-    let can_reveal =
-        item.kind == ClipboardKind::Files || item.sub_kind == Some(ClipboardSubKind::Path);
+    let can_reveal = item.kind == ClipboardKind::Files
+        || item.kind == ClipboardKind::Image
+        || item.sub_kind == Some(ClipboardSubKind::Path);
     if can_reveal {
         #[cfg(target_os = "macos")]
         actions.push(ClipboardAction::RevealInFinder);
@@ -773,6 +892,9 @@ fn compute_available_actions(item: &ClipboardItem) -> Vec<ClipboardAction> {
     }
 
     actions.push(ClipboardAction::ToggleFavorite);
+    if item.kind == ClipboardKind::Text {
+        actions.push(ClipboardAction::SegmentFill);
+    }
     actions.push(ClipboardAction::TogglePinned);
     actions.push(ClipboardAction::EditNote);
     actions.push(ClipboardAction::Delete);
@@ -1495,6 +1617,7 @@ pub async fn open_clipboard_item_link(
 pub async fn reveal_clipboard_item(
     app: AppHandle,
     db: State<'_, DatabaseState>,
+    store: State<'_, ImageStore>,
     id: String,
 ) -> Result<()> {
     use tauri_plugin_opener::OpenerExt;
@@ -1508,6 +1631,12 @@ pub async fn reveal_clipboard_item(
         item.content
             .split('\n')
             .find(|s| !s.is_empty())
+            .unwrap_or("")
+            .to_owned()
+    } else if item.kind == ClipboardKind::Image {
+        store
+            .origin_path(&item.content)
+            .to_str()
             .unwrap_or("")
             .to_owned()
     } else {
@@ -1567,6 +1696,7 @@ mod tests {
             is_favorite: false,
             is_pinned: false,
             is_sensitive,
+            sensitive_expires_at: None,
             platform: Platform::Macos,
             note: None,
             created_at: Utc::now(),
@@ -1781,6 +1911,33 @@ mod tests {
         let actions = compute_available_actions(&text_item(None, false));
 
         assert!(!actions.contains(&ClipboardAction::SaveImage));
+    }
+
+    #[test]
+    fn text_actions_place_segment_fill_between_favorite_and_pinned() {
+        let actions = compute_available_actions(&text_item(None, false));
+
+        let favorite = actions
+            .iter()
+            .position(|action| *action == ClipboardAction::ToggleFavorite)
+            .expect("favorite action");
+        let segment = actions
+            .iter()
+            .position(|action| *action == ClipboardAction::SegmentFill)
+            .expect("segment fill action");
+        let pinned = actions
+            .iter()
+            .position(|action| *action == ClipboardAction::TogglePinned)
+            .expect("pinned action");
+
+        assert!(favorite < segment && segment < pinned);
+    }
+
+    #[test]
+    fn non_text_actions_exclude_segment_fill() {
+        let actions = compute_available_actions(&image_item());
+
+        assert!(!actions.contains(&ClipboardAction::SegmentFill));
     }
 
     #[test]

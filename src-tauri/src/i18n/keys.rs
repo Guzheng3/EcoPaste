@@ -16,6 +16,7 @@ pub enum ClipboardMenuKey {
     MoveToGroup,
     AddNote,
     EditNote,
+    Edit,
     Delete,
 }
 
@@ -33,7 +34,6 @@ pub enum TrayKey {
     StartListening,
     StopListening,
     OpenSourceAddress,
-    CheckForUpdates,
     Version,
     Relaunch,
     Exit,

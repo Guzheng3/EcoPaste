@@ -3,18 +3,28 @@
 //! 时序约束：[`ClipboardContext`] 是 `!Send`，调用方需在不跨 await 的同步段内完成调用
 //! （命令层照 `read_clipboard` 的写法处理）。
 //!
+//! Windows 剪贴板为独占资源，微信 / 输入法 / 截图工具等进程可能短暂持有；写回（尤其图片
+//! 的 PNG→DIB 转换）撞上占用窗口会直接失败。与 watcher 读路径（`read_with_retry`）对称，
+//! 写回按 [`WRITE_RETRY_DELAYS`] 有界重试。重试会重复登记 `suppress` 指纹，但同内容
+//! 真实复制本就走 `content_hash` 去重，重复登记在 TTL 内无副作用。
+//!
 //! 回环抑制：写回前向 [`WritebackGuard`] 登记将写入内容的 `content_hash`，
 //! OS 监听重新读到同内容时跳过入库，避免「点击粘贴 → 自动新增一条」回环。
 //! 哈希必须与 [`crate::clipboard::ingest::build_item`] 在 watcher 路径上将算出的哈希一致：
 //! - text / html / rtf：watcher 拿到的 plain/html/rtf 经 `draft_from_text` 后 `content` 即我们写入的串，
 //!   `content_hash(Text, written)` 自然匹配；
 //! - files：watcher 把路径列表用 `\n` 连接后哈希，与我们 `item.content` 一致；
-//! - image：watcher 把 PNG 字节再 sha256 → 文件名 → 哈希。前提是 OS pasteboard 不改像素，
-//!   且 clipboard-rs 的 PNG 重新编码确定。绝大多数复制路径满足，极端情况可能漏抑制一次（最多多入一条新行）。
+//! - image：去重键按原图字节的 blake3 digest 计算，与落盘随机文件名无关。
+//!   写回时基于读到的同一份字节现算 digest 并双登记（兼容仍持旧文件名哈希的存量老条目），
+//!   watcher 读回同图时命中抑制。前提是 OS pasteboard 不改像素，且 clipboard-rs 的 PNG
+//!   重新编码确定。绝大多数复制路径满足，极端情况可能漏抑制一次（最多多入一条新行）。
 //!
 //! 纯文本模式（`plain = true`）：忽略 `sub_kind`，写 `search_text`（OS 提供的纯文本表示），
 //! 缺失时退回 `content`。供「纯文本粘贴」快捷路径使用。
 
+use std::time::Duration;
+
+use blake3::Hasher;
 use clipboard_rs::common::RustImage;
 use clipboard_rs::{Clipboard, ClipboardContent, ClipboardContext, RustImageData};
 
@@ -24,8 +34,36 @@ use crate::core::{AppError, Result};
 use crate::db::items::content_hash;
 use crate::db::models::{ClipboardItem, ClipboardKind, ClipboardSubKind};
 
+/// 写回撞上剪贴板独占占用时的退避重试间隔，与 watcher 读路径的
+/// `CLIPBOARD_READ_RETRY_DELAYS` 同款节奏。
+const WRITE_RETRY_DELAYS: [Duration; 3] = [
+    Duration::from_millis(15),
+    Duration::from_millis(35),
+    Duration::from_millis(75),
+];
+
 /// 把 `item` 写回系统剪贴板；`plain = true` 强制只写纯文本（剥离 HTML/RTF）。
+///
+/// 首次失败（通常是其它进程短暂持有剪贴板）按 [`WRITE_RETRY_DELAYS`] 重试，
+/// 与 watcher 读路径的重试策略对称；写入内容幂等，整段重试安全。
 pub fn write_to_clipboard(
+    store: &ImageStore,
+    guard: &WritebackGuard,
+    item: &ClipboardItem,
+    plain: bool,
+) -> Result<()> {
+    let mut result = write_once(store, guard, item, plain);
+    for delay in WRITE_RETRY_DELAYS {
+        if result.is_ok() {
+            return result;
+        }
+        std::thread::sleep(delay);
+        result = write_once(store, guard, item, plain);
+    }
+    result
+}
+
+fn write_once(
     store: &ImageStore,
     guard: &WritebackGuard,
     item: &ClipboardItem,
@@ -35,6 +73,7 @@ pub fn write_to_clipboard(
 
     match item.kind {
         ClipboardKind::Text => write_text(&ctx, guard, item, plain)?,
+        ClipboardKind::Image if plain => write_image_path_as_text(&ctx, store, guard, item)?,
         ClipboardKind::Image => write_image(&ctx, store, guard, item)?,
         // files + plain：把路径列表当文本写回，供「粘贴为路径」使用。
         ClipboardKind::Files if plain => write_files_as_text(&ctx, guard, item)?,
@@ -91,6 +130,7 @@ fn write_text(
         // url / email / color / path 及无 sub_kind 都走纯文本通道。
         _ => ctx.set_text(content).map_err(clip_err)?,
     }
+    guard.mark_self_write();
     Ok(())
 }
 
@@ -107,8 +147,31 @@ fn write_image(
     })?;
     let image = RustImageData::from_bytes(&bytes).map_err(clip_err)?;
 
+    // 双登记：新条目 content_hash 已是「hash(Image, 字节 digest)」；存量老条目仍是旧算法
+    // （hash(Image, 随机文件名)）。写回时按读到的原图字节现算一次 digest 哈希再登记一份，
+    // 无论条目新旧，watcher 读回同图时都能命中抑制，避免「粘贴图片新增一条」。
     guard.suppress(item.content_hash.clone());
+    guard.suppress(content_hash(ClipboardKind::Image, &blake3_hex(&bytes)));
     ctx.set_image(image).map_err(clip_err)?;
+    guard.mark_self_write();
+    Ok(())
+}
+
+/// 把图片在磁盘上的文件路径当纯文本写回剪贴板，供「粘贴为路径」使用。
+fn write_image_path_as_text(
+    ctx: &ClipboardContext,
+    store: &ImageStore,
+    guard: &WritebackGuard,
+    item: &ClipboardItem,
+) -> Result<()> {
+    let path = store.origin_path(&item.content);
+    let path_str = path
+        .to_str()
+        .ok_or_else(|| AppError::Clipboard("image path is not valid UTF-8".to_owned()))?;
+
+    guard.suppress(content_hash(ClipboardKind::Text, path_str));
+    ctx.set_text(path_str.to_owned()).map_err(clip_err)?;
+    guard.mark_self_write();
     Ok(())
 }
 
@@ -125,6 +188,7 @@ fn write_files(ctx: &ClipboardContext, guard: &WritebackGuard, item: &ClipboardI
 
     guard.suppress(item.content_hash.clone());
     ctx.set_files(paths).map_err(clip_err)?;
+    guard.mark_self_write();
     Ok(())
 }
 
@@ -139,11 +203,20 @@ fn write_files_as_text(
 
     guard.suppress(content_hash(ClipboardKind::Text, &text));
     ctx.set_text(text).map_err(clip_err)?;
+    guard.mark_self_write();
     Ok(())
 }
 
 fn clip_err<E: std::fmt::Display>(err: E) -> AppError {
     AppError::Clipboard(err.to_string())
+}
+
+/// 与 [`super::storage`] 内部同源的 blake3 十六进制工具：图片写回时按读到的原图字节现算 digest，
+/// 用于双登记抑制（见 [`write_image`]），不依赖落盘文件名。
+fn blake3_hex(bytes: &[u8]) -> String {
+    let mut hasher = Hasher::new();
+    hasher.update(bytes);
+    hasher.finalize().to_hex().to_string()
 }
 
 #[cfg(test)]
@@ -178,6 +251,7 @@ mod tests {
             is_favorite: false,
             is_pinned: false,
             is_sensitive: false,
+            sensitive_expires_at: None,
             platform: Platform::Macos,
             note: None,
             created_at: Utc::now(),
@@ -258,11 +332,14 @@ mod tests {
         // 先落盘一张原图（模拟历史记录里的 image item）。
         let png = sample_png(48, 32);
         let stored = store
-            .store(&ImagePayload {
-                bytes: png,
-                width: 48,
-                height: 32,
-            })
+            .store(
+                &ImagePayload {
+                    bytes: png,
+                    width: 48,
+                    height: 32,
+                },
+                None,
+            )
             .unwrap();
         let item = ClipboardItem {
             id: uuid::Uuid::new_v4().to_string(),
@@ -282,6 +359,7 @@ mod tests {
             is_favorite: false,
             is_pinned: false,
             is_sensitive: false,
+            sensitive_expires_at: None,
             platform: Platform::Macos,
             note: None,
             created_at: Utc::now(),
@@ -306,8 +384,10 @@ mod tests {
             .expect("should read image");
         let read_item = build_item(&store, &payload).unwrap().unwrap();
         assert_eq!(read_item.kind, ClipboardKind::Image);
-        // 往返期望 PNG 字节哈希一致 → 同 content_hash → guard 抑制。
-        assert_eq!(read_item.content_hash, item.content_hash);
+        // 新读回的条目去重键已按字节 digest 计算；item 仍构造为旧格式「文件名哈希」，
+        // 用于验证写回时双登记的第二份（digest）能兜住存量老条目 → guard 命中抑制。
+        let expected_hash = content_hash(ClipboardKind::Image, &stored.content_digest);
+        assert_eq!(read_item.content_hash, expected_hash);
         assert!(guard.should_skip(&read_item.content_hash));
     }
 

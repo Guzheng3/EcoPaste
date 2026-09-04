@@ -21,6 +21,8 @@ import type {
   ClipboardItemQuery,
   ClipboardKind,
   ClipboardSubKind,
+  ExtractedEntity,
+  SegmentEditResult,
   UpdateNoteResult,
 } from "@/types/clipboard";
 import type { Settings, SettingsPatch } from "@/types/settings";
@@ -239,31 +241,10 @@ export interface WindowLifecycleSnapshot {
   lastActiveAgoMs: number;
 }
 
-export interface UpdateMetadata {
-  currentVersion: string;
-  version: string;
-  date: string | null;
-  body: string | null;
-  target: string;
-  downloadUrl: string;
-  downloaded: boolean;
-}
-
-export interface AppUpdateStatus {
-  currentVersion: string;
-  update: UpdateMetadata | null;
-}
-
 export interface AdminLaunchStatus {
   configured: boolean;
   runningAsAdmin: boolean;
   taskReady: boolean;
-}
-
-export interface UpdateDownloadProgress {
-  downloaded: number;
-  total: number | null;
-  progress: number | null;
 }
 
 export interface OnboardingLegacyDataDetection {
@@ -476,69 +457,6 @@ export const resetSettings = async () => {
   getMessageApi().success(i18n.t("commands:messages.settingsReset"));
 
   return settings;
-};
-
-/**
- * 打开独立软件更新窗口。
- */
-export const openUpdateWindow = () => {
-  return call<void>(
-    TAURI_COMMAND.OPEN_UPDATE_WINDOW,
-    "commands:labels.openUpdateWindow",
-  );
-};
-
-/**
- * 读取当前更新状态；不触发网络请求。
- */
-export const getUpdateStatus = () => {
-  return call<AppUpdateStatus>(
-    TAURI_COMMAND.GET_UPDATE_STATUS,
-    "commands:labels.loadUpdateStatus",
-  );
-};
-
-/**
- * 手动检查更新。
- */
-export const checkForUpdates = () => {
-  return call<AppUpdateStatus>(
-    TAURI_COMMAND.CHECK_FOR_UPDATES,
-    "commands:labels.checkForUpdates",
-  );
-};
-
-/**
- * 下载并校验当前更新包，进度通过 `update://progress` 推送。
- */
-export const downloadUpdate = (version: string) => {
-  return call<UpdateMetadata>(
-    TAURI_COMMAND.DOWNLOAD_UPDATE,
-    "commands:labels.downloadUpdate",
-    { version },
-  );
-};
-
-/**
- * 安装已下载更新。Tauri updater 会按平台重启/退出当前应用。
- */
-export const installUpdate = (version: string) => {
-  return call<void>(
-    TAURI_COMMAND.INSTALL_UPDATE,
-    "commands:labels.installUpdate",
-    { version },
-  );
-};
-
-/**
- * 跳过当前发现的版本。
- */
-export const skipUpdateVersion = (version: string) => {
-  return call<AppUpdateStatus>(
-    TAURI_COMMAND.SKIP_UPDATE_VERSION,
-    "commands:labels.skipUpdateVersion",
-    { version },
-  );
 };
 
 /**
@@ -1002,6 +920,51 @@ export const pasteClipboardItem = (id: string, plain: boolean) => {
 };
 
 /**
+ * 按 id 对单条文本记录做拆词 + 链接/域名/邮箱/手机号提取。
+ * 供「编辑」弹窗获取词块与提取结果。
+ */
+export const segmentClipboardItem = (id: string) => {
+  return call<SegmentEditResult>(
+    TAURI_COMMAND.SEGMENT_CLIPBOARD_ITEM,
+    "commands:labels.loadSegment",
+    { id },
+  );
+};
+
+/**
+ * 把已选词块拼接的文本写入系统剪贴板并模拟粘贴到前台输入框。
+ * Rust 侧会先隐藏剪贴板窗口再模拟 ⌘V / Ctrl+V。
+ */
+export const fillSelectedText = (text: string) => {
+  return call<void>(TAURI_COMMAND.FILL_SELECTED_TEXT, "commands:labels.fill", {
+    text,
+  });
+};
+
+/**
+ * 按 id 读一条文本记录，返回其中提取的链接 / 邮箱 / 手机号 / QQ（按出现顺序去重）。
+ * 供文本卡片下方的实体下拉框使用。
+ */
+export const extractItemEntities = (id: string) => {
+  return call<ExtractedEntity[]>(
+    TAURI_COMMAND.EXTRACT_ITEM_ENTITIES,
+    "commands:labels.extractEntities",
+    { id },
+  );
+};
+
+/**
+ * 打开一个已提取实体：链接打开系统浏览器、邮箱唤起邮件客户端。键入走 `fillSelectedText`。
+ */
+export const openEntityLink = (kind: string, value: string) => {
+  return call<void>(
+    TAURI_COMMAND.OPEN_ENTITY_LINK,
+    "commands:labels.openEntity",
+    { kind, value },
+  );
+};
+
+/**
  * 启动一次 OS 级 drag-out：把条目拖出剪贴板窗口到外部应用。
  *
  * - Files / Image：拖出为文件，预览用 OS 原生图标。
@@ -1367,16 +1330,6 @@ export const getClipboardPreviewPayload = (itemId: string) => {
     TAURI_COMMAND.GET_CLIPBOARD_PREVIEW_PAYLOAD,
     "commands:labels.loadPreviewContent",
     { itemId },
-  );
-};
-
-/**
- * 播放一次复制成功提示音，供偏好设置页试听。
- */
-export const playCopySound = () => {
-  return call<void>(
-    TAURI_COMMAND.PLAY_COPY_SOUND,
-    "commands:labels.playCopySound",
   );
 };
 

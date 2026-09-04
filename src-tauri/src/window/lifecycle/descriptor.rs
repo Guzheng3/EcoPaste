@@ -7,17 +7,13 @@
 use tauri::AppHandle;
 
 use super::super::{
-    build_onboarding_window, build_preference_window, build_update_window, preview,
-    CLIPBOARD_PREVIEW_WINDOW_LABEL, CLIPBOARD_WINDOW_LABEL, ONBOARDING_WINDOW_LABEL,
-    PREFERENCE_WINDOW_LABEL, UPDATE_WINDOW_LABEL,
+    build_onboarding_window, build_preference_window, preview, CLIPBOARD_PREVIEW_WINDOW_LABEL,
+    CLIPBOARD_WINDOW_LABEL, ONBOARDING_WINDOW_LABEL, PREFERENCE_WINDOW_LABEL,
 };
 use crate::core::Result;
 
 #[cfg(target_os = "windows")]
-use crate::menu::context_window::{
-    build_context_menu_window, build_context_submenu_window, CONTEXT_MENU_WINDOW_LABEL,
-    CONTEXT_SUBMENU_WINDOW_LABEL,
-};
+use crate::menu::context_window::{CONTEXT_MENU_WINDOW_LABEL, CONTEXT_SUBMENU_WINDOW_LABEL};
 
 /// 窗口保留 / 销毁策略。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,12 +69,6 @@ static DESCRIPTORS: &[WindowDescriptor] = &[
         build: Some(build_onboarding_window),
     },
     WindowDescriptor {
-        label: UPDATE_WINDOW_LABEL,
-        emits_lifecycle: true,
-        retain_policy: RetainPolicy::DestroyWhenIdle,
-        build: Some(build_update_window),
-    },
-    WindowDescriptor {
         label: CLIPBOARD_PREVIEW_WINDOW_LABEL,
         emits_lifecycle: true,
         retain_policy: RetainPolicy::DestroyWhenIdle,
@@ -88,15 +78,16 @@ static DESCRIPTORS: &[WindowDescriptor] = &[
     WindowDescriptor {
         label: CONTEXT_MENU_WINDOW_LABEL,
         emits_lifecycle: true,
-        retain_policy: RetainPolicy::DestroyWhenIdle,
-        build: Some(build_context_menu_window),
+        // 常驻复用：右键菜单经 `prewarm` 预热，隐藏后也不销毁，保证首次及后续右键都瞬时响应。
+        retain_policy: RetainPolicy::Permanent,
+        build: None,
     },
     #[cfg(target_os = "windows")]
     WindowDescriptor {
         label: CONTEXT_SUBMENU_WINDOW_LABEL,
         emits_lifecycle: true,
-        retain_policy: RetainPolicy::DestroyWhenIdle,
-        build: Some(build_context_submenu_window),
+        retain_policy: RetainPolicy::Permanent,
+        build: None,
     },
 ];
 

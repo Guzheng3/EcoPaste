@@ -6,14 +6,15 @@
 //! - `search_text` 存**纯文本**（HTML 去标签 / RTF 用 OS 提供的 plain 文本），供 FTS 检索与纯文本粘贴；
 //! - 纯文本无富文本时 `sub_kind` 走 url/email/color/path 识别。
 //!
-//! 图片：落盘原图 + 缩略图，`content` 存文件名 `<sha256>.png`，`content_hash` 仍走
-//! [`content_hash(Image, file_name)`]，而 `file_name` 源自 PNG 字节哈希 → 去重对字节敏感。
+//! 图片：落盘原图 + 缩略图，`content` 存随机文件名 `<来源>_<时间戳>.png`；
+//! 去重键 `content_hash` 不走文件名（那是随机的），而按原图字节的 blake3 digest 计算 →
+//! 同一张图无论复制 / 粘贴多少次都判为同内容（见 [`Draft::content_hash_override`]）。
 
 use chrono::Utc;
 
 use super::detect::detect_text_sub_kind;
 use super::payload::{ClipboardPayload, TextPayload};
-use super::secrets::contains_secret;
+use super::secrets::{contains_personal_info, contains_secret};
 use super::storage::ImageStore;
 use crate::core::Result;
 use crate::db::items::content_hash;
@@ -61,6 +62,9 @@ struct Draft {
     width: Option<i64>,
     height: Option<i64>,
     size: Option<i64>,
+    /// 去重指纹的替代输入：`None` 时用 `content`（与其他类型一致），
+    /// 图片用它把去重键从随机文件名改为图片字节 digest，使复制 / 粘贴图片可以稳定去重。
+    content_hash_override: Option<String>,
 }
 
 /// files 列表入库时的 `content`：换行连接的路径串（与去重哈希、FTS 检索单一来源）。
@@ -113,6 +117,7 @@ fn draft_from_text(text: &TextPayload, capture: &Capture, plain_only: bool) -> O
                             width: None,
                             height: None,
                             size: Some(count_text_bytes(html)),
+                            content_hash_override: None,
                         });
                     }
                 }
@@ -128,6 +133,7 @@ fn draft_from_text(text: &TextPayload, capture: &Capture, plain_only: bool) -> O
                             width: None,
                             height: None,
                             size: Some(count_text_bytes(rtf)),
+                            content_hash_override: None,
                         });
                     }
                 }
@@ -160,6 +166,7 @@ fn draft_plain_text(plain: &str, plain_search: Option<String>, summary: Option<S
         width: None,
         height: None,
         size: Some(count_text_bytes(plain)),
+        content_hash_override: None,
     }
 }
 
@@ -190,6 +197,7 @@ pub fn build_item(store: &ImageStore, payload: &ClipboardPayload) -> Result<Opti
 }
 
 /// 把载荷转换为待入库记录，同时应用内容类型与隐私过滤设置。
+/// 便捷入口：无明确来源名（测试 / 导入等场景）时，图片临时文件名来源退化为 `unknown`。
 pub fn build_item_with_settings(
     store: &ImageStore,
     payload: &ClipboardPayload,
@@ -197,10 +205,25 @@ pub fn build_item_with_settings(
     sensitive: &Sensitive,
     plain_only: bool,
 ) -> Result<Option<ClipboardItem>> {
+    build_item_with_source(store, payload, capture, sensitive, plain_only, None)
+}
+
+/// 带来源名的构建入口。`source_name` 用于无原始路径图片的临时文件名前缀（「来源_时间」）；
+/// 监听 / 命令场景把前台应用名传进来，其余传 `None`。
+pub fn build_item_with_source(
+    store: &ImageStore,
+    payload: &ClipboardPayload,
+    capture: &Capture,
+    sensitive: &Sensitive,
+    plain_only: bool,
+    source_name: Option<&str>,
+) -> Result<Option<ClipboardItem>> {
     let mut is_sensitive = false;
     let draft = match payload {
         ClipboardPayload::Text(text) => {
-            if contains_secret(&text.text) {
+            // 敏感判定：高置信密钥 / Token 或高置信个人隐私（身份证、手机号、银行卡）。
+            // 命中且未开启收录 → 整条不入库；开启收录 → 入库并标记敏感（过期自毁 + 脱敏）。
+            if contains_secret(&text.text) || contains_personal_info(&text.text) {
                 if !sensitive.collect_secrets {
                     return Ok(None);
                 }
@@ -254,6 +277,7 @@ pub fn build_item_with_settings(
                     width: None,
                     height: None,
                     size: None,
+                    content_hash_override: None,
                 })
             }
         }
@@ -261,16 +285,9 @@ pub fn build_item_with_settings(
             if !capture.image {
                 return Ok(None);
             }
-            if exceeds_limit(image.bytes.len(), capture.max_image_bytes()) {
-                log::info!(
-                    "clipboard image skipped because size {} exceeds limit {:?}",
-                    image.bytes.len(),
-                    capture.max_image_bytes()
-                );
-                return Ok(None);
-            }
-
-            let stored = store.store(image)?;
+            // 无原始路径的图片统一存临时目录，不设大小上限；生命周期跟随数据库记录：
+            // 记录删除时连带删文件，去重命中时本次落盘的未被引用文件由监听层即时删除。
+            let stored = store.store(image, source_name)?;
             Some(Draft {
                 kind: ClipboardKind::Image,
                 sub_kind: None,
@@ -281,6 +298,11 @@ pub fn build_item_with_settings(
                 width: Some(stored.width),
                 height: Some(stored.height),
                 size: Some(stored.size),
+                // 图片去重键改用字节 digest：文件名是随机的，作键会使同一张图每次复制 / 粘贴都判为新内容。
+                content_hash_override: Some(content_hash(
+                    ClipboardKind::Image,
+                    &stored.content_digest,
+                )),
             })
         }
     };
@@ -300,9 +322,19 @@ pub fn build_item_with_settings(
     }
 
     let now = Utc::now();
+    // 敏感条目且配置了 TTL → 设置过期时间供清理任务自动清除；未开 TTL / 非敏感条目为 None。
+    let sensitive_expires_at = if is_sensitive {
+        let ttl_hours = u64::from(sensitive.sensitive_ttl_hours);
+        (ttl_hours > 0).then(|| now + chrono::Duration::hours(ttl_hours as i64))
+    } else {
+        None
+    };
+
     Ok(Some(ClipboardItem {
         id: uuid::Uuid::new_v4().to_string(),
-        content_hash: content_hash(draft.kind, &draft.content),
+        content_hash: draft
+            .content_hash_override
+            .unwrap_or_else(|| content_hash(draft.kind, &draft.content)),
         kind: draft.kind,
         sub_kind: draft.sub_kind,
         group_id: None,
@@ -318,6 +350,7 @@ pub fn build_item_with_settings(
         is_favorite: false,
         is_pinned: false,
         is_sensitive,
+        sensitive_expires_at,
         platform: current_platform(),
         note: None,
         created_at: now,
@@ -646,6 +679,7 @@ mod tests {
             &Sensitive {
                 collect_secrets: true,
                 redact_secrets: false,
+                ..Default::default()
             },
             false,
         )
@@ -667,6 +701,7 @@ mod tests {
             &Sensitive {
                 collect_secrets: false,
                 redact_secrets: true,
+                ..Default::default()
             },
             false,
         )
@@ -685,6 +720,7 @@ mod tests {
             &Sensitive {
                 collect_secrets: true,
                 redact_secrets: true,
+                ..Default::default()
             },
             false,
         )
@@ -722,6 +758,7 @@ mod tests {
             &Sensitive {
                 collect_secrets: true,
                 redact_secrets: true,
+                ..Default::default()
             },
             false,
         )
@@ -773,12 +810,28 @@ mod tests {
         assert_eq!(item.width, Some(20));
         assert_eq!(item.height, Some(10));
         assert!(item.size.unwrap() > 0);
-        assert_eq!(
+        // 去重键应基于图片字节 digest，而不是随机文件名。
+        assert_ne!(
             item.content_hash,
             content_hash(ClipboardKind::Image, &item.content)
         );
         // 原图确实落盘。
         assert!(s.origin_path(&item.content).exists());
+    }
+
+    #[test]
+    fn image_dedup_hash_is_stable_across_captures() {
+        let (_d, s) = store();
+        let payload = ClipboardPayload::Image(ImagePayload {
+            bytes: sample_png(32, 24),
+            width: 32,
+            height: 24,
+        });
+        let a = build_item(&s, &payload).unwrap().unwrap();
+        let b = build_item(&s, &payload).unwrap().unwrap();
+        // 文件名每次捕获都不同，但字节相同 → 去重指纹必须一致（otherwise 复制/粘贴图片会新增条目）。
+        assert_ne!(a.content, b.content);
+        assert_eq!(a.content_hash, b.content_hash);
     }
 
     #[test]
@@ -799,25 +852,29 @@ mod tests {
     }
 
     #[test]
-    fn image_limit_skips_before_writing_origin() {
+    fn image_is_stored_without_size_cap() {
         let (_d, s) = store();
-        let capture = Capture {
-            max_image_mb: 1,
-            ..Capture::default()
-        };
+        // 图片不再设大小上限：大图仍应入库且原图落盘（临时目录，来源 unknown）。
         let bytes = vec![1; 1024 * 1024 + 1];
         let payload = ClipboardPayload::Image(ImagePayload {
             bytes: bytes.clone(),
             width: 20,
             height: 10,
         });
-        let item =
-            build_item_with_settings(&s, &payload, &capture, &Sensitive::default(), false).unwrap();
+        let item = build_item_with_settings(
+            &s,
+            &payload,
+            &Capture::default(),
+            &Sensitive::default(),
+            false,
+        )
+        .unwrap()
+        .unwrap();
 
-        assert!(item.is_none());
-        assert!(!s
-            .origin_path(&format!("{}.png", blake3::hash(&bytes).to_hex()))
-            .exists());
+        assert_eq!(item.kind, ClipboardKind::Image);
+        assert!(item.content.starts_with("unknown_"));
+        assert!(s.origin_path(&item.content).exists());
+        assert_eq!(std::fs::read(s.origin_path(&item.content)).unwrap(), bytes);
     }
 
     #[test]

@@ -23,6 +23,10 @@
     "searchGroupFavorites": "No favorites in \"{{group}}\" match \"{{keyword}}\"",
     "searchHistory": "No records found for \"{{keyword}}\""
   },
+  "entities": {
+    "fill": "Fill",
+    "open": "Open"
+  },
   "footer": {
     "shortcuts": "Shortcuts",
     "total": "{{count}} items"
@@ -76,9 +80,29 @@
     "pinItem": "Pin to Top",
     "pinItemActive": "Unpin from Top",
     "reveal": "Show in File Manager",
+    "segmentFill": "Edit",
     "sendEmail": "Send Email",
     "star": "Favorite",
     "starActive": "Unfavorite"
+  },
+  "segmentFill": {
+    "editPlaceholder": "Edit the text to extract blocks in real-time...",
+    "empty": "No words to split",
+    "fill": "Fill {{count}} word(s)",
+    "noResults": "No results",
+    "tabs": {
+      "emails": "Emails",
+      "links": "Links",
+      "phones": "Phones",
+      "words": "Words"
+    },
+    "title": "Edit",
+    "toggles": {
+      "emails": "Emails",
+      "links": "Links",
+      "phones": "Phones",
+      "words": "Words"
+    }
   },
   "shortcuts": {
     "closePreviewFilterWindow": "Close preview / filters / window",

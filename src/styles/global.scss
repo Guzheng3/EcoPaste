@@ -23,3 +23,16 @@ html {
   --os-handle-bg-hover: var(--ant-color-text-tertiary);
   --os-handle-bg-active: var(--ant-color-text-secondary);
 }
+
+/* TieZ 风格搜索框：独立一行撑满两侧，加大高度与圆角（复刻 tiez-clipboard
+   `.search-input`：圆角 12、上下 10px 内边距、柔和底色）。 */
+.tiez-search.ant-input-affix-wrapper {
+  height: 38px;
+  padding-inline: 12px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.tiez-search.ant-input-affix-wrapper .ant-input {
+  font-size: 13px;
+}

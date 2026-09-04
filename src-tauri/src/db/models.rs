@@ -61,6 +61,11 @@ pub struct ClipboardItem {
     pub is_pinned: bool,
     /// 命中敏感内容规则且被收录的条目；展示是否脱敏由当前设置决定。
     pub is_sensitive: bool,
+    /// 敏感条目的自动清除截止时间（UTC）。`None` = 不启用过期清除（普通条目 / 已收藏 /
+    /// 未设置 TTL）。过期后由清理任务删除；收藏项豁免。
+    #[sqlx(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sensitive_expires_at: Option<DateTime<Utc>>,
     pub platform: Platform,
     pub note: Option<String>,
     pub created_at: DateTime<Utc>,
@@ -139,6 +144,8 @@ pub enum ClipboardAction {
     RevealInExplorer,
     /// 切换收藏（恒在；前端按 `is_favorite` 切「收藏 / 取消收藏」文案）。
     ToggleFavorite,
+    /// 编辑（词块拆分填入，`kind = text`）。
+    SegmentFill,
     /// 切换置顶（恒在；前端按 `is_pinned` 切「置顶 / 取消置顶」文案）。
     TogglePinned,
     /// 编辑备注（恒在）。

@@ -133,7 +133,12 @@ impl SettingsStore {
 
 /// 生成默认设置，并沿用首次启动的系统语言推导规则。
 fn default_settings_with_system_locale() -> Settings {
-    let mut settings = Settings::default();
+    // 全新默认已包含最新的复制提示 / 复用时更新语义，直接视为已迁移，避免下次启动重复回写。
+    let mut settings = Settings {
+        copy_feedback_migrated: true,
+        update_on_reuse_migrated: true,
+        ..Settings::default()
+    };
     if let Some(tag) = tauri_plugin_os::locale() {
         settings.appearance.language = Language::from_system_locale(&tag);
         log::info!(
@@ -156,12 +161,44 @@ fn load_from_disk(path: &Path) -> Option<Settings> {
         serde_json::from_str::<Settings>(&content)
             .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))
     }) {
-        Ok(settings) => Some(settings),
+        Ok(mut settings) => {
+            // 一次性迁移：旧配置里「复制成功提示」可能被默认成关闭，强制开启一次并回写。
+            if migrate_settings(&mut settings) {
+                if let Err(err) = write_atomic(path, &settings) {
+                    log::warn!("persist settings migration failed: {err}");
+                }
+            }
+            Some(settings)
+        }
         Err(err) => {
             log::warn!("settings file {path:?} unreadable, using defaults: {err}");
             Some(Settings::default())
         }
     }
+}
+
+/// 从旧版本到当前版本的必要设置迁移。返回本次是否发生了改动（需回写磁盘）。
+///
+/// 目前有两条一次性迁移（各自带标记，迁移过就尊重用户手动设置，不再覆盖）：
+/// 1. `copy_feedback_migrated`：旧配置把「复制成功提示」强制改为开启；
+/// 2. `update_on_reuse_migrated`：旧配置把「复用时更新记录」（粘贴/复制后置顶）
+///    强制改为开启，与新版默认保持一致。
+fn migrate_settings(settings: &mut Settings) -> bool {
+    let mut changed = false;
+
+    if !settings.copy_feedback_migrated {
+        settings.copy_feedback_migrated = true;
+        settings.clipboard.feedback.copy_sound = true;
+        changed = true;
+    }
+
+    if !settings.update_on_reuse_migrated {
+        settings.update_on_reuse_migrated = true;
+        settings.clipboard.content.update_on_reuse = true;
+        changed = true;
+    }
+
+    changed
 }
 
 /// 写入策略：把新内容写到 tmp 后 rename 成主文件；rename 在同一文件系统下是原子的。
@@ -331,8 +368,15 @@ mod tests {
         assert!(parsed.clipboard.content.delete_favorite_confirm);
         assert!(!parsed.clipboard.content.delete_pinned_items);
         assert!(parsed.clipboard.content.delete_pinned_confirm);
-        assert!(!parsed.clipboard.content.update_on_reuse);
-        assert_eq!(parsed.clipboard.history.cleanup_interval_hours, 0);
+        assert!(parsed.clipboard.content.update_on_reuse);
+        assert_eq!(parsed.clipboard.history.max_count, 0);
+        assert_eq!(
+            parsed.clipboard.history.retention,
+            crate::settings::Retention {
+                value: 30,
+                unit: crate::settings::RetentionUnit::Days
+            }
+        );
         assert!(parsed.clipboard.window.scroll_to_top_on_open);
         assert_eq!(
             parsed.clipboard.window.select_range_on_open,

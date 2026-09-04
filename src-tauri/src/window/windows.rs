@@ -2,7 +2,7 @@
 
 use std::sync::Mutex;
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, IsWindow, SetForegroundWindow};
 
@@ -11,6 +11,41 @@ use crate::core::Result;
 use crate::{keyboard, mouse};
 
 static PRE_EDIT_FOREGROUND_HWND: Mutex<Option<isize>> = Mutex::new(None);
+
+/// 前台窗口是否为本应用任一 webview 窗口。
+///
+/// 粘贴模拟按键必须由目标应用接收：发送 Ctrl+V 前若前台仍是本应用
+/// （编辑态下剪贴板窗口临时可聚焦并持有前台，hide 又是主线程异步派发），
+/// 按键会被本应用吞掉，表现为「点了没粘贴但条目移到了开头」。
+pub fn foreground_is_app_window(app_handle: &AppHandle) -> bool {
+    let foreground = unsafe { GetForegroundWindow() };
+    if foreground.0 == 0 {
+        return false;
+    }
+
+    app_handle.webview_windows().values().any(|window| {
+        window
+            .hwnd()
+            .map(|hwnd| hwnd.0 as isize == foreground.0)
+            .unwrap_or(false)
+    })
+}
+
+/// 等待前台窗口离开本应用（编辑态恢复 / hide 都在主线程异步完成）。
+///
+/// 模拟粘贴按键必须由目标应用接收：前台仍是本应用 webview 窗口时发 Ctrl+V
+/// 会被自己吞掉。前台已切走时立即返回（零等待）；超时兜底只告警不阻塞，
+/// 让粘贴行为退化为旧表现而不是卡死。
+pub async fn wait_foreground_left_app_window(app_handle: &AppHandle, timeout: std::time::Duration) {
+    let deadline = tokio::time::Instant::now() + timeout;
+    while foreground_is_app_window(app_handle) {
+        if tokio::time::Instant::now() >= deadline {
+            log::warn!("foreground still on app window before paste, sending anyway");
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+}
 
 pub fn show_window(app_handle: &AppHandle, label: &str) -> Result<()> {
     let window = get_window(app_handle, label)?;

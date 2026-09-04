@@ -43,11 +43,10 @@ tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-prevent-default = "5"
 auto-launch = "0.6"
-rodio = { version = "0.20", default-features = false, features = ["symphonia-mp3"] }
 file_icon_provider = "1"
 image = { version = "0.25", default-features = false, features = ["png"] }
 tauri-plugin-os = "2"
-tauri-plugin-updater = "2"
+jieba-rs = "0.7"
 time = "0.3"
 drag = "2.1"
 zip = { version = "4.6", default-features = false, features = ["deflate"] }
@@ -77,6 +76,7 @@ winapi = { version = "0.3", features = [
     "winnt",
     "minwindef",
     "windef",
+    "winver",
 ] }
 windows-registry = "0.6"
 windows-result = "0.4"
@@ -89,6 +89,8 @@ windows = { version = "0.52", features = [
     "Win32_System_DataExchange",
     "Win32_System_SystemServices",
     "Win32_System_Threading",
+    "Win32_System_ProcessStatus",
+    "Win32_UI_Accessibility",
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Shell",
 ] }

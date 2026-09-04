@@ -61,6 +61,7 @@ import {
 } from "../hooks/useClipboardPreviewController";
 import ClipboardCard from "./cards/ClipboardCard";
 import NoteModal from "./NoteModal";
+import SegmentFillModal from "./SegmentFillModal";
 
 /** 前 10 项的快捷键：index 0-8 对应 1-9，index 9 对应 0 */
 const KEY_HINTS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
@@ -90,6 +91,9 @@ const List: FC = () => {
   const [isModifierPressed, setIsModifierPressed] = useState(false);
   const [customGroups, setCustomGroups] = useState<ClipboardGroupRecord[]>([]);
   const [noteTarget, setNoteTarget] = useState<ClipboardItem | null>(null);
+  const [segmentTarget, setSegmentTarget] = useState<ClipboardItem | null>(
+    null,
+  );
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const isAtTopRef = useRef(true);
   const itemElementMapRef = useRef(new Map<string, HTMLDivElement>());
@@ -559,6 +563,10 @@ const List: FC = () => {
       case "toggleFavorite":
         handleShortcutToggleFavorite(target.id);
         return;
+      case "segmentFill":
+        if (previewSession?.itemId === target.id) closePreview("segmentFill");
+        setSegmentTarget(target);
+        return;
       case "togglePinned":
         handleTogglePinned(target.id);
         return;
@@ -812,6 +820,11 @@ const List: FC = () => {
         onClose={handleCloseNote}
         onSaved={handleNoteSaved}
       />
+
+      <SegmentFillModal
+        item={segmentTarget}
+        onClose={() => setSegmentTarget(null)}
+      />
     </div>
   );
 
@@ -913,6 +926,10 @@ const List: FC = () => {
           return;
         case "note":
           handleEditNote();
+          return;
+        case "segmentFill":
+          if (previewSession?.itemId === item.id) closePreview("segmentFill");
+          setSegmentTarget(item);
           return;
         case "pinItem":
           await handleTogglePinned(item.id);
