@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.1.1](https://github.com/Guzheng3/EcoPaste/compare/v1.1.0...v1.1.1) (2026-09-04)
+
+### ✨ Features
+
+* add copied toast bubble window and window lifecycle management
+* harden clipboard pipeline: retry write-back and sync-generate thumbnails
+
+### 🐛 Bug Fixes
+
+* broaden email local-part regex to include . _ + - % (#1403)
+* preserve sensitive flags during backup merge import (#1404)
+* fall back to LIKE for search keywords with short tokens (#1407)
+* detect labeled secrets with quoted JSON-style keys (#1408)
+* retry clipboard writes against transient clipboard locks
+* sync-generate image thumbnails to prevent full-size image freezes
+* skip duplicate-copy toast when copying the latest entry
+
 ## [1.1.0](https://github.com/EcoPasteHub/EcoPaste/compare/v1.0.0...v1.1.0) (2026-07-22)
 
 ### ✨ Features
