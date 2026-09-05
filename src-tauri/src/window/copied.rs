@@ -141,11 +141,8 @@ fn show_inner(app: &AppHandle) -> Result<()> {
     // 先恢复 WebView 合成再显示原生窗口：hide 时为避免 WebView2 在窗口消失前
     // 闪出最终帧会先停掉 webview（见 [`hide_toast`]），此处必须成对恢复，
     // 否则窗口出现时内容空白；先恢复也让窗口出现的瞬间内容已就绪。
-    if let Some(win) = app.get_window(COPIED_WINDOW_LABEL) {
-        for wv in win.webviews() {
-            let _ = wv.show();
-        }
-    }
+    // `WebviewWindow` 唯一的 `AsRef` 实现即 `AsRef<Webview>`，as_ref 直接取到 webview。
+    let _ = window.as_ref().show();
 
     window
         .show()
@@ -188,11 +185,7 @@ fn hide_toast(app: &AppHandle) -> Option<bool> {
     let window = app.get_webview_window(COPIED_WINDOW_LABEL)?;
     let was_visible = window.is_visible().unwrap_or(false);
 
-    if let Some(win) = app.get_window(COPIED_WINDOW_LABEL) {
-        for wv in win.webviews() {
-            let _ = wv.hide();
-        }
-    }
+    let _ = window.as_ref().hide();
     let _ = window.hide();
 
     Some(was_visible)
