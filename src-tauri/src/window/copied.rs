@@ -3,11 +3,14 @@
 //! 在它里面就看不见）。
 //!
 //! 与右键菜单窗（`context_window`）同一套参数：`focusable: false` 不抢前台焦点、
-//! `always_on_top` 保证盖在任意应用上层、`transparent` 只显示圆角卡片。
+//! `always_on_top` 保证盖在任意应用上层、`transparent` 只显示圆角卡片；另加
+//! `shadow: false`，避免 Windows DWM 的无边框窗口矩形描边在卡片淡出后残留。
 //!
 //! 生命周期由前端驱动：本端 show 后广播一次 [`COPIED_PLAY_EVENT`]，前端据此播放
 //! 「出现 → 画圆 → 画勾 → 停留 → 淡出」动画，动画结束后 invoke `hide_copied_toast`
 //! 让本端隐藏窗口；本端另保留一个兜底超时，防止前端异常时窗口残留。
+//! 隐藏统一走 [`hide_toast`]：先停 WebView 合成再藏原生窗口，避免消失瞬间的
+//! 矩形闪帧。
 //!
 //! 销毁策略：永不销毁（与剪贴板主窗口一致）。隐藏后 13.14s 进入休眠态，仅记录状态，
 //! WebView 实例保留，下次 show 时秒级复用。
@@ -60,6 +63,10 @@ fn ensure_window(app: &AppHandle) -> Result<()> {
     .inner_size(WINDOW_WIDTH, WINDOW_HEIGHT)
     .decorations(false)
     .transparent(true)
+    // Windows 上 DWM 默认给无边框窗口描一圈矩形边框：卡片淡出后、窗口 hide 前，
+    // 内容已透明而边框仍残留，观感上是一个矩形框最后消失。关掉 shadow 后
+    // 窗口本身不再有任何原生描边，视觉只剩前端绘制的圆角卡片。
+    .shadow(false)
     .resizable(false)
     .maximizable(false)
     .minimizable(false)
@@ -131,6 +138,15 @@ fn show_inner(app: &AppHandle) -> Result<()> {
             .map_err(|err| AppError::Other(anyhow::anyhow!("copied toast position: {err}")))?;
     }
 
+    // 先恢复 WebView 合成再显示原生窗口：hide 时为避免 WebView2 在窗口消失前
+    // 闪出最终帧会先停掉 webview（见 [`hide_toast`]），此处必须成对恢复，
+    // 否则窗口出现时内容空白；先恢复也让窗口出现的瞬间内容已就绪。
+    if let Some(win) = app.get_window(COPIED_WINDOW_LABEL) {
+        for wv in win.webviews() {
+            let _ = wv.show();
+        }
+    }
+
     window
         .show()
         .map_err(|err| AppError::Other(anyhow::anyhow!("copied toast show: {err}")))?;
@@ -152,29 +168,40 @@ fn show_inner(app: &AppHandle) -> Result<()> {
         if COPIED_EPOCH.load(Ordering::Relaxed) != fallback_epoch {
             return;
         }
-        if let Some(w) = app.get_webview_window(COPIED_WINDOW_LABEL) {
-            if w.is_visible().unwrap_or(false) {
-                let _ = w.hide();
-                lifecycle::on_hidden(&app, COPIED_WINDOW_LABEL, "fallback");
-                schedule_dormant(&app);
-            }
+        if hide_toast(&app).unwrap_or(false) {
+            lifecycle::on_hidden(&app, COPIED_WINDOW_LABEL, "fallback");
+            schedule_dormant(&app);
         }
     });
 
     Ok(())
 }
 
+/// 隐藏气泡窗：先停掉 WebView 合成，再隐藏原生窗口。
+///
+/// Windows 上直接 hide 窗口时，WebView2 可能在窗口消失前刷出最后一帧
+/// 非透明内容（表现为矩形框闪现后才消失）。先把 webview 置为不可见，
+/// 让它立即停止合成，再隐藏窗口本体，视觉上即无缝消失。
+///
+/// 返回隐藏前窗口是否可见（不可见说明早已隐藏，调用方可跳过状态记账）。
+fn hide_toast(app: &AppHandle) -> Option<bool> {
+    let window = app.get_webview_window(COPIED_WINDOW_LABEL)?;
+    let was_visible = window.is_visible().unwrap_or(false);
+
+    if let Some(win) = app.get_window(COPIED_WINDOW_LABEL) {
+        for wv in win.webviews() {
+            let _ = wv.hide();
+        }
+    }
+    let _ = window.hide();
+
+    Some(was_visible)
+}
+
 /// 前端动画（淡出）结束后调用，隐藏气泡窗。
 #[tauri::command]
 pub fn hide_copied_toast(app: AppHandle) {
-    let hidden = app
-        .get_webview_window(COPIED_WINDOW_LABEL)
-        .map(|window| {
-            let visible = window.is_visible().unwrap_or(false);
-            let _ = window.hide();
-            visible
-        })
-        .unwrap_or(false);
+    let hidden = hide_toast(&app).unwrap_or(false);
     lifecycle::on_hidden(&app, COPIED_WINDOW_LABEL, "frontend");
     if hidden {
         schedule_dormant(&app);
