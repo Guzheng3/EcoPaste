@@ -1,5 +1,11 @@
 # 更新日志
 
+## [1.1.2](https://github.com/Guzheng3/EcoPaste/compare/v1.1.1...v1.1.2) (2026-09-05)
+
+### 🐛 问题修复
+
+* 修复复制成功气泡淡出后残留原生矩形边框的问题
+
 ## [1.1.1](https://github.com/Guzheng3/EcoPaste/compare/v1.1.0...v1.1.1) (2026-09-04)
 
 ### ✨ 新功能
