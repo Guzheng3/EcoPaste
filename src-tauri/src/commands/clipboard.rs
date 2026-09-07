@@ -1,6 +1,6 @@
 //! 剪贴板相关命令：手动重新读取、解析图片路径。供前端按需触发。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -14,8 +14,8 @@ use tauri_plugin_dialog::DialogExt;
 use crate::clipboard::{
     add_app_from_path, build_item_with_source, delete_unreferenced_apps, detect_frontmost,
     extract_entities, materialize_source, persist_and_notify, refresh_running_apps,
-    sanitize_css_color, segment_edit, AppIconStore, AppsRegistry, ClipboardReader, ExtractedEntity,
-    FileIconStore, ImageStore, WritebackGuard,
+    sanitize_css_color, segment_edit, verify_qq_exists, AppIconStore, AppsRegistry,
+    ClipboardReader, EntityKind, ExtractedEntity, FileIconStore, ImageStore, WritebackGuard,
 };
 use crate::core::{AppError, Result};
 use crate::db::items::{
@@ -492,6 +492,8 @@ pub async fn segment_clipboard_item(
 
 /// 实体提取（前端实体下拉框入口）：按 id 读一条文本记录，返回其中提取的链接 / 邮箱 / 手机号 / QQ。
 /// 非文本记录返回空数组。规则见 `crate::clipboard::entities`，已按出现顺序去重。
+/// QQ 号会再经 Qzone 公开接口核验真实存在（见 `crate::clipboard::qq`），
+/// 确认不存在的剔除；接口不可达时保留显示（降级），避免网络抖动导致 QQ 实体整体消失。
 #[tauri::command]
 pub async fn extract_item_entities(
     db: State<'_, DatabaseState>,
@@ -507,7 +509,24 @@ pub async fn extract_item_entities(
     }
 
     let text = item.search_text.clone().unwrap_or(item.content);
-    Ok(extract_entities(&text))
+    let mut entities = extract_entities(&text);
+
+    let qqs: Vec<String> = entities
+        .iter()
+        .filter(|entity| entity.kind == EntityKind::Qq)
+        .map(|entity| entity.value.clone())
+        .collect();
+    if !qqs.is_empty() {
+        let mut invalid = HashSet::new();
+        for qq in qqs {
+            if verify_qq_exists(&qq).await == Some(false) {
+                invalid.insert(qq);
+            }
+        }
+        entities.retain(|entity| !(entity.kind == EntityKind::Qq && invalid.contains(&entity.value)));
+    }
+
+    Ok(entities)
 }
 
 /// 填入：把已选词块拼接文本写入系统剪贴板，隐藏剪贴板窗口后模拟 ⌘V / Ctrl+V 键入前台输入框。

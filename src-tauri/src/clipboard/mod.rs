@@ -9,6 +9,7 @@ mod guard;
 mod icon;
 mod ingest;
 mod payload;
+mod qq;
 mod read;
 mod secrets;
 mod segment;
@@ -22,7 +23,7 @@ pub use apps_registry::{
     add_app_from_path, delete_unreferenced_apps, refresh_running_apps, AppsRegistry,
 };
 pub use detect::sanitize_css_color;
-pub use entities::{extract_entities, ExtractedEntity};
+pub use entities::{extract_entities, EntityKind, ExtractedEntity};
 pub use file_icon_store::FileIconStore;
 pub use guard::WritebackGuard;
 pub use icon::{get_icon_cache_key, icon_png, DIR_CACHE_KEY};
@@ -30,6 +31,7 @@ pub use icon::{get_icon_cache_key, icon_png, DIR_CACHE_KEY};
 pub use ingest::build_item;
 pub use ingest::{build_item_with_settings, build_item_with_source};
 pub use payload::{ClipboardPayload, ImagePayload, TextPayload};
+pub use qq::verify_qq_exists;
 pub use read::ClipboardReader;
 pub use segment::{segment_edit, SegmentEditResult};
 pub use source::{detect_frontmost, init_window_tracking};
