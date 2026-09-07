@@ -24,6 +24,8 @@
     "searchHistory": "No records found for \"{{keyword}}\""
   },
   "entities": {
+    "collapse": "Collapse",
+    "expand": "Show {{count}} more",
     "fill": "Fill",
     "open": "Open"
   },

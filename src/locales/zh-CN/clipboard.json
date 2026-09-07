@@ -24,6 +24,8 @@
     "searchHistory": "未找到「{{keyword}}」相关记录"
   },
   "entities": {
+    "collapse": "收起",
+    "expand": "展开 {{count}} 项",
     "fill": "键入",
     "open": "打开"
   },

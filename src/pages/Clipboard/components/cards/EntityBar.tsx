@@ -17,14 +17,23 @@ interface EntityBarProps {
 }
 
 /**
+ * 实体数量超过该阈值时默认折叠（前 `COLLAPSE_THRESHOLD` 项 + 「+N」按钮），
+ * 避免一条含大量链接的记录把卡片撑得过长；点击按钮手动展开 / 收起。
+ */
+const COLLAPSE_THRESHOLD = 4;
+
+/**
  * 文本卡片下方自动展开的实体下拉框：把长文本里的链接 / 邮箱 / 手机号 / QQ 逐项列出。
  * - 链接：高亮展示，支持「打开」与「键入」
  * - 邮箱 / 手机号 / QQ：支持「键入」（写剪贴板 + 模拟粘贴）或邮箱「打开」
+ * - 实体过多时默认折叠，点击「+N」展开、「收起」恢复
  */
 const EntityBar: FC<EntityBarProps> = (props) => {
   const { itemId } = props;
+  const { t } = useTranslation("clipboard");
 
   const [entities, setEntities] = useState<ExtractedEntity[]>([]);
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     let disposed = false;
@@ -41,11 +50,46 @@ const EntityBar: FC<EntityBarProps> = (props) => {
 
   if (entities.length === 0) return null;
 
+  const collapsed = !expanded && entities.length > COLLAPSE_THRESHOLD;
+  const visibleEntities = collapsed
+    ? entities.slice(0, COLLAPSE_THRESHOLD)
+    : entities;
+  const hiddenCount = entities.length - visibleEntities.length;
+
   return (
     <div className="mt-1 flex flex-wrap gap-1.5">
-      {entities.map((entity) => (
+      {visibleEntities.map((entity) => (
         <EntityChip entity={entity} key={`${entity.kind}:${entity.start}`} />
       ))}
+      {collapsed ? (
+        <button
+          className="inline-flex items-center gap-1 rounded-1 border border-ant-border-secondary bg-ant-fill-quaternary px-1.5 py-0.5 text-xs text-ant-secondary hover:bg-ant-fill-secondary hover:text-ant-primary"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            setExpanded(true);
+          }}
+          title={t("entities.expand", { count: hiddenCount })}
+          type="button"
+        >
+          <i aria-hidden="true" className="i-lucide:chevron-down size-3.5" />
+          +{hiddenCount}
+        </button>
+      ) : expanded ? (
+        <button
+          className="inline-flex items-center gap-1 rounded-1 border border-ant-border-secondary bg-ant-fill-quaternary px-1.5 py-0.5 text-xs text-ant-secondary hover:bg-ant-fill-secondary hover:text-ant-primary"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            setExpanded(false);
+          }}
+          title={t("entities.collapse")}
+          type="button"
+        >
+          <i aria-hidden="true" className="i-lucide:chevron-up size-3.5" />
+          {t("entities.collapse")}
+        </button>
+      ) : null}
     </div>
   );
 };
