@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/Guzheng3/EcoPaste/compare/v1.1.2...v1.2.0) (2026-09-07)
+
+### ✨ Features
+
+* verify extracted QQ accounts against the Qzone public API before showing them; keep them when the API is unreachable
+* collapse the entity bar beyond four chips with expand / collapse controls
+
 ## [1.1.2](https://github.com/Guzheng3/EcoPaste/compare/v1.1.1...v1.1.2) (2026-09-05)
 
 ### 🐛 Bug Fixes
