@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.1](https://github.com/Guzheng3/EcoPaste/compare/v1.2.0...v1.2.1) (2026-09-08)
+
+### 🐛 Bug Fixes
+
+* timeout file-system probes so a disconnected network drive cannot leave the clipboard history list loading forever
+
 ## [1.2.0](https://github.com/Guzheng3/EcoPaste/compare/v1.1.2...v1.2.0) (2026-09-07)
 
 ### ✨ Features
