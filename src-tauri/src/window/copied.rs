@@ -84,7 +84,50 @@ fn ensure_window(app: &AppHandle) -> Result<()> {
         .build()
         .map_err(|err| AppError::Other(anyhow::anyhow!("build copied window: {err}")))?;
 
+    #[cfg(windows)]
+    disable_native_window_frame(&app.get_webview_window(COPIED_WINDOW_LABEL).unwrap());
+
     Ok(())
+}
+
+/// 彻底去掉 Windows DWM 对无边框窗口的默认修饰（Windows 11 22H2+ 生效）：
+/// - `DWMWA_BORDER_COLOR = DWMWA_COLOR_NONE`：移除系统沿窗口矩形边缘画的 1px 描边，
+///   用户看到的「透明窗口仍有一圈边框」就是它（`shadow(false)` 管不到这条线）；
+/// - `DWMWA_WINDOW_CORNER_PREFERENCE = DWMWCP_DONOTROUND`：禁用系统默认圆角，
+///   避免 DWM 对透明四角做圆角裁剪并沿裁剪边描线，与前端 10px 圆角卡片叠加出双圆角。
+///
+/// 属性与 HWND 绑定，窗口常驻复用，建窗时设置一次即可。
+/// Windows 10 及更早系统不支持这两个属性，调用失败静默忽略（本就没有该描边）。
+#[cfg(windows)]
+fn disable_native_window_frame(window: &tauri::WebviewWindow) {
+    use windows::Win32::Foundation::COLORREF;
+    use windows::Win32::Graphics::Dwm::{
+        DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_WINDOW_CORNER_PREFERENCE,
+        DWMWA_COLOR_NONE, DWMWCP_DONOTROUND, DWM_WINDOW_CORNER_PREFERENCE,
+    };
+
+    let Ok(hwnd) = window.hwnd() else {
+        return;
+    };
+    let hwnd = windows::Win32::Foundation::HWND(hwnd.0 as isize);
+
+    unsafe {
+        let border_none = COLORREF(DWMWA_COLOR_NONE);
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_BORDER_COLOR,
+            &border_none as *const COLORREF as *const std::ffi::c_void,
+            std::mem::size_of::<COLORREF>() as u32,
+        );
+
+        let corner = DWM_WINDOW_CORNER_PREFERENCE(DWMWCP_DONOTROUND.0);
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_WINDOW_CORNER_PREFERENCE,
+            &corner as *const DWM_WINDOW_CORNER_PREFERENCE as *const std::ffi::c_void,
+            std::mem::size_of::<DWM_WINDOW_CORNER_PREFERENCE>() as u32,
+        );
+    }
 }
 
 /// 在剪贴板窗口所在显示器（回退主显示器）右下角弹出复制成功提示，1.5s 后自动隐藏。
