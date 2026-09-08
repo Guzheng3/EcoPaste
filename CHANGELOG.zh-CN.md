@@ -1,5 +1,11 @@
 # 更新日志
 
+## [1.2.1](https://github.com/Guzheng3/EcoPaste/compare/v1.2.0...v1.2.1) (2026-09-08)
+
+### 🐛 问题修复
+
+* 修复网络盘断开后，重启软件历史复制记录一直转圈无法加载的问题
+
 ## [1.2.0](https://github.com/Guzheng3/EcoPaste/compare/v1.1.2...v1.2.0) (2026-09-07)
 
 ### ✨ 新功能
