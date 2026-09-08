@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.4](https://github.com/Guzheng3/EcoPaste/compare/v1.2.3...v1.2.4) (2026-09-08)
+
+### ✨ Features
+
+* show a pink "Already copied" toast with a right-arrow icon when re-copying content that is already first in the history list
+
 ## [1.2.3](https://github.com/Guzheng3/EcoPaste/compare/v1.2.2...v1.2.3) (2026-09-08)
 
 ### 🐛 Bug Fixes
