@@ -91,6 +91,25 @@ impl WindowStateStore {
         Ok(())
     }
 
+    /// 清空全部窗口几何存档（内存 + 落盘）。
+    /// 显示器配置变化后调用：旧几何按旧分辨率记录，重启后按默认布局重新初始化。
+    pub fn clear_all(&self) -> Result<()> {
+        self.states
+            .lock()
+            .unwrap_or_else(|poisoned| {
+                log::error!("window state mutex poisoned on clear, recovering");
+                poisoned.into_inner()
+            })
+            .clear();
+
+        let json = serde_json::to_string_pretty(&HashMap::<String, WindowState>::new())
+            .context("failed to serialize empty window states")?;
+        let path = self.path();
+        fs::write(&path, json)
+            .with_context(|| format!("failed to write window state to {:?}", path))?;
+        Ok(())
+    }
+
     fn path(&self) -> PathBuf {
         self.path
             .read()

@@ -231,6 +231,9 @@ pub fn run() {
 
             menu::clipboard_item::init(&handle);
 
+            // 显示器配置监听：分辨率 / 缩放 / 显示器增删变化后自动重启以适应新分辨率。
+            window::monitor_watch::spawn(&handle);
+
             #[cfg(target_os = "windows")]
             menu::context_window::init(&handle);
 

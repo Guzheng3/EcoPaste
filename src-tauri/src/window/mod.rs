@@ -1,5 +1,6 @@
 pub mod copied;
 pub mod lifecycle;
+pub mod monitor_watch;
 pub(super) mod position;
 pub mod preview;
 mod state;
@@ -158,9 +159,14 @@ fn delays_clipboard_visibility_event(label: &str) -> bool {
 }
 
 pub fn hide_window(app_handle: &AppHandle, label: &str) -> Result<()> {
+    // 显示器变化待重启时跳过几何保存：存档已在检测时清空，重启后按新分辨率默认布局初始化。
+    let monitor_restart_pending = monitor_watch::take_pending_restart();
+
     // 隐藏前保存任意窗口的实时几何：移动与缩放都在这里落盘，下次显示/启动可恢复。
-    if let Err(err) = state::save_window_state(app_handle, label) {
-        log::warn!("save window state on hide failed for {label}: {err}");
+    if !monitor_restart_pending {
+        if let Err(err) = state::save_window_state(app_handle, label) {
+            log::warn!("save window state on hide failed for {label}: {err}");
+        }
     }
 
     if label == CLIPBOARD_WINDOW_LABEL {
@@ -174,6 +180,12 @@ pub fn hide_window(app_handle: &AppHandle, label: &str) -> Result<()> {
     if result.is_ok() {
         emit_visibility(app_handle, label, false);
         lifecycle::on_hidden(app_handle, label, "hide");
+
+        // 显示器变化后窗口一旦隐藏就立即重启（窗口可见期间已 clamp 救急）。
+        if monitor_restart_pending {
+            log::info!("restarting app after window hidden (monitor configuration changed)");
+            app_handle.restart();
+        }
     }
     result
 }
@@ -246,11 +258,15 @@ pub fn intercept_close_request(window: &Window) -> bool {
     }
 
     // 关闭按钮不走 `hide_window`，需在此单独保存几何，否则 preference 的移动/缩放会丢失。
-    if let Err(err) = state::save_window_state(window.app_handle(), window.label()) {
-        log::warn!(
-            "save window state on close failed for {}: {err}",
-            window.label()
-        );
+    // 显示器变化待重启时跳过保存：存档已在检测时清空，重启后按新分辨率默认布局初始化。
+    let monitor_restart_pending = monitor_watch::take_pending_restart();
+    if !monitor_restart_pending {
+        if let Err(err) = state::save_window_state(window.app_handle(), window.label()) {
+            log::warn!(
+                "save window state on close failed for {}: {err}",
+                window.label()
+            );
+        }
     }
 
     if let Err(err) = window.hide() {
@@ -258,6 +274,11 @@ pub fn intercept_close_request(window: &Window) -> bool {
     } else {
         emit_visibility(window.app_handle(), window.label(), false);
         lifecycle::on_hidden(window.app_handle(), window.label(), "close");
+
+        if monitor_restart_pending {
+            log::info!("restarting app after window closed (monitor configuration changed)");
+            window.app_handle().restart();
+        }
     }
     true
 }
