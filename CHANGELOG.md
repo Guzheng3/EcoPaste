@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2.3](https://github.com/Guzheng3/EcoPaste/compare/v1.2.2...v1.2.3) (2026-09-08)
+
+### 🐛 Bug Fixes
+
+* remove the 1px native border Windows 11 draws around the transparent copied toast via `DWMWA_BORDER_COLOR = DWMWA_COLOR_NONE` and disable system corner rounding
+
 ## [1.2.2](https://github.com/Guzheng3/EcoPaste/compare/v1.2.1...v1.2.2) (2026-09-08)
 
 ### 🐛 Bug Fixes

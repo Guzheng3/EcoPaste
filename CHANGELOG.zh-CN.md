@@ -1,5 +1,11 @@
 # 更新日志
 
+## [1.2.3](https://github.com/Guzheng3/EcoPaste/compare/v1.2.2...v1.2.3) (2026-09-08)
+
+### 🐛 问题修复
+
+* 彻底去除复制成功气泡窗四周残留的系统原生边框：通过 DWM 属性关闭 Windows 11 给无边框窗口绘制的 1px 描边与默认圆角修饰
+
 ## [1.2.2](https://github.com/Guzheng3/EcoPaste/compare/v1.2.1...v1.2.2) (2026-09-08)
 
 ### 🐛 问题修复
