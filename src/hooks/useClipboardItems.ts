@@ -10,6 +10,13 @@ const PRELOAD_ROWS = 30;
 const CACHE_MAX_ROWS = 180;
 const CACHE_KEEP_RADIUS = 90;
 
+/**
+ * 列表请求前端兜底超时：后端命令被任何未知因素挂起（如文件系统调用卡死）时，
+ * invoke 会永远 pending 且不 reject，导致初始加载永远转圈。超时后按失败降级，
+ * 保证列表至少能渲染出空态而不是无限 loading。正常查询毫秒~秒级，30 秒非常宽松。
+ */
+const FETCH_TIMEOUT_MS = 30_000;
+
 interface ClipboardItemsRange {
   end: number;
   start: number;
@@ -97,12 +104,21 @@ export const useClipboardItems = (query: ClipboardItemQuery) => {
 
       addLoadingRange(range);
 
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
       try {
-        const page = await listClipboardItems({
-          ...queryRef.current,
-          limit: range.end - range.start + 1,
-          offset: range.start,
-        });
+        const page = await Promise.race([
+          listClipboardItems({
+            ...queryRef.current,
+            limit: range.end - range.start + 1,
+            offset: range.start,
+          }),
+          new Promise<never>((_, reject) => {
+            timeoutId = setTimeout(() => {
+              reject(new Error("list clipboard items timed out"));
+            }, FETCH_TIMEOUT_MS);
+          }),
+        ]);
 
         if (options.token !== requestTokenRef.current) return;
 
@@ -131,6 +147,8 @@ export const useClipboardItems = (query: ClipboardItemQuery) => {
           commitLoadedInitial(true);
         }
       } finally {
+        if (timeoutId !== undefined) clearTimeout(timeoutId);
+
         if (options.token === requestTokenRef.current) {
           removeLoadingRange(range);
           setLoading(false);

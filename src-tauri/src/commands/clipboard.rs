@@ -1,8 +1,9 @@
 //! 剪贴板相关命令：手动重新读取、解析图片路径。供前端按需触发。
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use chrono::{DateTime, Datelike, Local, Utc};
 use clipboard_rs::{Clipboard, ClipboardContext};
@@ -523,7 +524,8 @@ pub async fn extract_item_entities(
                 invalid.insert(qq);
             }
         }
-        entities.retain(|entity| !(entity.kind == EntityKind::Qq && invalid.contains(&entity.value)));
+        entities
+            .retain(|entity| !(entity.kind == EntityKind::Qq && invalid.contains(&entity.value)));
     }
 
     Ok(entities)
@@ -733,10 +735,9 @@ async fn attach_image_thumbnail_path(store: &ImageStore, item: &mut ClipboardIte
 
     let gen_store = store.clone();
     let gen_file_name = file_name.clone();
-    let generated = tauri::async_runtime::spawn_blocking(move || {
-        gen_store.ensure_thumbnail(&gen_file_name)
-    })
-    .await;
+    let generated =
+        tauri::async_runtime::spawn_blocking(move || gen_store.ensure_thumbnail(&gen_file_name))
+            .await;
 
     let path = match generated {
         Ok(Ok(path)) => path,
@@ -1163,7 +1164,6 @@ async fn resolve_file_icon_path(
     index: usize,
 ) -> Result<(Option<String>, bool)> {
     let path_obj = Path::new(path);
-    let exists = path_obj.exists();
     let platform = if cfg!(target_os = "macos") {
         Platform::Macos
     } else {
@@ -1174,11 +1174,16 @@ async fn resolve_file_icon_path(
         .and_then(|types| types.split(',').nth(index))
         .map(|t| t == "d");
 
-    let cache_key = if is_directory == Some(true) {
-        crate::clipboard::DIR_CACHE_KEY.to_string()
-    } else {
-        // 路径存在时实时判断（覆盖入库后类型变化的情况）；已删除时按扩展名推断。
-        crate::clipboard::get_icon_cache_key(path_obj)
+    // 断开的网络盘 / 慢速设备上的同步文件系统调用（exists / is_dir）可能长时间甚至
+    // 永久挂起（SMB 半开会话不超时），而本函数运行在 tokio worker 上，一旦挂起整个
+    // list_clipboard_items 命令都无法返回，表现为前端列表一直转圈。
+    // 把 exists 与 cache_key 计算合并进 blocking 线程并限时：超时按「不存在」降级。
+    let (exists, cache_key) = match is_directory {
+        Some(true) => (
+            path_exists_with_timeout(path_obj.to_path_buf()).await,
+            crate::clipboard::DIR_CACHE_KEY.to_string(),
+        ),
+        _ => probe_path_with_timeout(path_obj.to_path_buf()).await,
     };
 
     // DB 命中后还要确认 icon 文件仍在磁盘上：用户清缓存 / 手动删 file-icons 目录后，
@@ -1195,11 +1200,22 @@ async fn resolve_file_icon_path(
     }
 
     let path_for_extract = path_obj.to_path_buf();
-    let png_bytes = tauri::async_runtime::spawn_blocking(move || {
+    // 图标抽取（Windows SHGetFileInfo）同样可能对网络 / 慢速路径长时间阻塞，
+    // 与 exists 检查一样加超时保护：超时降级为无图标，不拖住列表返回。
+    let extract_task = tauri::async_runtime::spawn_blocking(move || {
         crate::clipboard::icon_png(&path_for_extract, None)
-    })
-    .await
-    .map_err(|err| AppError::Clipboard(format!("icon extract task join failed: {err}")))?;
+    });
+    let png_bytes = match tokio::time::timeout(Duration::from_secs(5), extract_task).await {
+        Ok(Ok(png)) => png,
+        Ok(Err(err)) => {
+            log::warn!("icon extract task join failed for {path}: {err}");
+            return Ok((None, exists));
+        }
+        Err(_) => {
+            log::warn!("icon extract timed out for {path}, fallback to no icon");
+            return Ok((None, exists));
+        }
+    };
 
     let Some(png) = png_bytes else {
         return Ok((None, exists));
@@ -1210,6 +1226,60 @@ async fn resolve_file_icon_path(
 
     let icon_path = file_icon_store.icon_path(&icon_file);
     Ok((icon_path.to_str().map(str::to_owned), exists))
+}
+
+/// 用户文件路径存在性检查的超时：本地路径毫秒级返回；网络盘断开 / SMB 半开
+/// 会话时同步 `exists()` 可能数十秒甚至永久不返回，3 秒足够判定「当前不可用」。
+const FILE_EXISTS_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// 在 blocking 线程上执行 `path.exists()` 并限时：超时 / 任务失败一律按「不存在」降级，
+/// 避免 tokio worker 被挂起的文件系统调用卡死（列表表现为一直转圈）。
+async fn path_exists_with_timeout(path: PathBuf) -> bool {
+    let path_for_log = path.to_string_lossy().to_string();
+    match tokio::time::timeout(
+        FILE_EXISTS_TIMEOUT,
+        tauri::async_runtime::spawn_blocking(move || path.exists()),
+    )
+    .await
+    {
+        Ok(Ok(exists)) => exists,
+        Ok(Err(err)) => {
+            log::warn!("fs exists check task failed: {err}");
+            false
+        }
+        Err(_) => {
+            log::warn!("fs exists check timed out, treating as missing: {path_for_log}");
+            false
+        }
+    }
+}
+
+/// 在 blocking 线程上同时完成 `exists()` 与 icon 缓存 key 计算（后者内部的 `is_dir()`
+/// 同样是可能挂起的文件系统调用），整体受 [`FILE_EXISTS_TIMEOUT`] 限时。
+/// 超时 / 失败时按「不存在」降级，缓存 key 回退为路径字符串本身（异常态仅求不挂起）。
+async fn probe_path_with_timeout(path: PathBuf) -> (bool, String) {
+    let path_for_log = path.to_string_lossy().to_string();
+    let probe = tokio::time::timeout(
+        FILE_EXISTS_TIMEOUT,
+        tauri::async_runtime::spawn_blocking(move || {
+            let exists = path.exists();
+            let cache_key = crate::clipboard::get_icon_cache_key(&path);
+            (exists, cache_key)
+        }),
+    )
+    .await;
+
+    match probe {
+        Ok(Ok((exists, cache_key))) => (exists, cache_key),
+        Ok(Err(err)) => {
+            log::warn!("fs probe task failed: {err}");
+            (false, path_for_log)
+        }
+        Err(_) => {
+            log::warn!("fs probe timed out, treating as missing: {path_for_log}");
+            (false, path_for_log)
+        }
+    }
 }
 
 /// 按 id 列表批量取来源应用——前端渲染卡片时一次性补齐图标/名称。
