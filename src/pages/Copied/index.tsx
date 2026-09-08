@@ -5,20 +5,30 @@ import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useTauriListen } from "@/hooks/useTauriListen";
+import { cn } from "@/utils/cn";
 
 /**
- * 复制成功小气泡窗 `/copied`：由 Rust 侧按需创建独立置顶小窗（`transparent`）加载本页。
+ * 复制反馈小气泡窗 `/copied`：由 Rust 侧按需创建独立置顶小窗（`transparent`）加载本页。
+ *
+ * 两种变体（由 `copied://play` 事件的 `duplicate` 字段区分）：
+ * - 新内容入库：绿色圆环 + 对勾 + 「复制成功」；
+ * - 重复复制（内容已在列表第一位）：粉红圆环 + 向右箭头 + 「已复制」。
  *
  * 生命周期由前端驱动：
  * 1. 页面加载（mount）自动播放一遍；
- * 2. 每次 show 后端广播 `copied://play`，前端据此重播；
- * 3. 按「出现 → 画圆 → 画勾 → 停留 → 淡出」播放，动画结束后 invoke
+ * 2. 每次 show 后端广播 `copied://play`（payload 携带变体），前端据此重播；
+ * 3. 按「出现 → 画圆 → 画勾/箭头 → 停留 → 淡出」播放，动画结束后 invoke
  *    `hide_copied_toast` 让后端隐藏窗口。
  */
+interface CopiedPlayPayload {
+  duplicate?: boolean;
+}
+
 const Copied: FC = () => {
   const { t } = useTranslation("commands");
 
   const [phase, setPhase] = useState<"enter" | "showing" | "exit">("enter");
+  const [duplicate, setDuplicate] = useState(false);
   /** 单调递增的播放序号，用于让过期的「重播」回调自失效。 */
   const seqRef = useRef(0);
   const timerRef = useRef<number[]>([]);
@@ -42,11 +52,13 @@ const Copied: FC = () => {
 
   /**
    * 播放完整动画一次。`seq` 用于丢弃过期的播放（新的 show 到来时旧回调不再生效）。
+   * `dup` 决定变体：true 为粉色「已复制」右箭头，false 为绿色「复制成功」对勾。
    */
-  const play = (seq: number) => {
+  const play = (seq: number, dup: boolean) => {
     // 卸载尚未清理的旧 timer，并按批次递增 key 强制重建节点重放动画
     clearTimers();
     setPhase("enter");
+    setDuplicate(dup);
     setReplayKey((k) => k + 1);
 
     // 入场：出现 + 画圆 + 画勾（0.9s）
@@ -67,11 +79,11 @@ const Copied: FC = () => {
   };
 
   useMount(() => {
-    play(++seqRef.current);
+    play(++seqRef.current, false);
   });
 
-  useTauriListen("copied://play", () => {
-    play(++seqRef.current);
+  useTauriListen<CopiedPlayPayload>("copied://play", (event) => {
+    play(++seqRef.current, event.payload?.duplicate === true);
   });
 
   // 不再守卫 i18n.isInitialized——窗口在 keepalive 过期后会被销毁重建，
@@ -82,7 +94,13 @@ const Copied: FC = () => {
     <div className="h-screen w-screen overflow-hidden">
       <style>{COPED_CSS}</style>
       <div className="contents" key={replayKey}>
-        <div className={`copied-toast copied-toast--${phase}`}>
+        <div
+          className={cn(
+            "copied-toast",
+            `copied-toast--${phase}`,
+            duplicate && "copied-toast--duplicate",
+          )}
+        >
           <svg aria-hidden="true" className="copied-badge" viewBox="0 0 24 24">
             <circle
               className="copied-ring"
@@ -91,10 +109,17 @@ const Copied: FC = () => {
               r="10"
               transform="rotate(-90 12 12)"
             />
-            <path className="copied-line" d="M7 12.6 L10.8 16.4 L17 8.5" />
+            {duplicate ? (
+              // 向右箭头：横杆 + 尖角（重复复制 = 内容已在历史最前）
+              <path className="copied-line" d="M7 12 L17 12 M13 8 L17 12 L13 16" />
+            ) : (
+              <path className="copied-line" d="M7 12.6 L10.8 16.4 L17 8.5" />
+            )}
           </svg>
           <span className="copied-text">
-            {t("copied", { defaultValue: "复制成功" })}
+            {duplicate
+              ? t("alreadyCopied", { defaultValue: "已复制" })
+              : t("copied", { defaultValue: "复制成功" })}
           </span>
         </div>
       </div>
@@ -102,10 +127,14 @@ const Copied: FC = () => {
   );
 };
 
-/** 动画关键帧与视觉样式，与演示稿保持一致（半透明胶囊 + 描边圆/勾 + 平滑绿光晕）。 */
+/** 动画关键帧与视觉样式，与演示稿保持一致（半透明胶囊 + 描边圆/勾 + 平滑光晕）。 */
 const COPED_CSS = `
  :root {
   --copied-success: #22c55e;
+  --copied-duplicate: #ec4899;
+  --copied-accent: var(--copied-success);
+  --copied-glow-soft: rgb(34 197 94 / 0.4);
+  --copied-glow-spread: rgb(34 197 94 / 0.32);
   --copied-bg: #ffffff;
   --copied-text: #3f3f46;
   --copied-shadow: 0 8px 24px rgb(22 163 74 / 0.18);
@@ -120,6 +149,15 @@ const COPED_CSS = `
    --copied-bg: #141816;
    --copied-text: #dcfce7;
  }
+
+ /* 重复复制变体：粉红强调色 + 粉色光晕/阴影（覆盖默认 accent） */
+ .copied-toast--duplicate {
+  --copied-accent: var(--copied-duplicate);
+  --copied-glow-soft: rgb(236 72 153 / 0.4);
+  --copied-glow-spread: rgb(236 72 153 / 0.32);
+  --copied-shadow: 0 8px 24px rgb(219 39 119 / 0.18);
+}
+ html.dark .copied-toast--duplicate { color: #fce7f3; }
 
  .copied-toast {
   display: flex; align-items: center; justify-content: center; gap: 10px;
@@ -162,15 +200,15 @@ const COPED_CSS = `
  /* 文字：单行渲染，绝不换行（DPI 变化等极端情况下宁可稍宽也不折行） */
  .copied-text { white-space: nowrap; }
 
- /* 图标：圆环 + 对勾，stroke 逐笔画出 */
+ /* 图标：圆环 + 对勾/箭头（stroke 跟随变体 accent 色），逐笔画出 */
  .copied-badge { width: 30px; height: 30px; display: block; flex-shrink: 0; }
  .copied-ring {
-   fill: none; stroke: var(--copied-success);
+   fill: none; stroke: var(--copied-accent);
    stroke-width: 2.5; stroke-linecap: round;
    stroke-dasharray: 63; stroke-dashoffset: 0;
  }
  .copied-line {
-   fill: none; stroke: var(--copied-success);
+   fill: none; stroke: var(--copied-accent);
    stroke-width: 3; stroke-linecap: round; stroke-linejoin: round;
    stroke-dasharray: 26; stroke-dashoffset: 0;
  }

@@ -122,11 +122,14 @@ pub fn materialize_source(
     app
 }
 
-/// 复制成功反馈：外部复制入库时（真正新入库，或去重命中**非头部**条目——气泡同时
-/// 传达「复制成功 + 已有条目已移到历史开头」），只要设置开启 `feedback.copy_sound`，
-/// 就在屏幕右下角弹一个独立置顶小窗提示。与最近一条完全相同的重复复制不弹
-/// （判定见 [`persist_and_notify`]）。失败仅记日志，不阻断入库主流程。
-fn notify_copy_feedback(app: &AppHandle) {
+/// 复制成功反馈：外部复制入库时弹屏幕底部居中的置顶小气泡。
+/// - `duplicate = false`：真正新入库，或去重命中**非头部**条目（气泡同时传达
+///   「复制成功 + 已有条目已移到历史开头」），绿色对勾「复制成功」；
+/// - `duplicate = true`：与最近一条完全相同的重复复制（列表无可见变化），
+///   粉色右箭头「已复制」，提示操作已被识别但无新条目。
+///
+/// 仅当设置开启 `feedback.copy_sound` 时弹出。失败仅记日志，不阻断入库主流程。
+fn notify_copy_feedback(app: &AppHandle, duplicate: bool) {
     let enabled = app
         .try_state::<SettingsStore>()
         .map(|s| s.snapshot().clipboard.feedback.copy_sound)
@@ -134,7 +137,7 @@ fn notify_copy_feedback(app: &AppHandle) {
     if !enabled {
         return;
     }
-    crate::window::copied::show(app);
+    crate::window::copied::show(app, duplicate);
 }
 
 /// 去重入库 + emit「剪贴板更新」事件。监听回调与 `read_clipboard` 命令共用，
@@ -164,9 +167,9 @@ pub async fn persist_and_notify(
         }
     }
     // 与最近一条完全相同的重复复制：去重命中的就是列表头部条目，upsert 只刷新
-    // 计数与 updated_at，列表无可见变化——「复制成功 + 已移到开头」气泡在此场景
-    // 没有信息量，跳过。查询失败时保守照弹，保持旧行为。
-    let skip_feedback = latest_content_hash(pool)
+    // 计数与 updated_at，列表无可见变化——气泡换成粉色「已复制」变体，提示操作
+    // 已识别但无新条目。查询失败时保守按「新入库」弹绿色气泡，保持旧行为。
+    let duplicate_at_top = latest_content_hash(pool)
         .await
         .map(|latest| latest.is_some_and(|hash| hash == item_to_write.content_hash))
         .unwrap_or(false);
@@ -196,13 +199,14 @@ pub async fn persist_and_notify(
     // WebviewWindowBuilder::build()，必须在主线程执行。
     // 由 watcher 线程经 async_runtime::spawn 调用，不在主线程，
     // 故必须通过 run_on_main_thread 投递，否则随机崩溃。
-    if !skip_feedback {
-        let app_handle = app.clone();
-        if let Err(err) = app_handle.clone().run_on_main_thread(move || {
-            notify_copy_feedback(&app_handle);
-        }) {
-            log::warn!("dispatch notify_copy_feedback to main thread failed: {err}");
-        }
+    let app_handle = app.clone();
+    let duplicate = duplicate_at_top;
+    // run_on_main_thread 的接收者与闭包捕获各持一份句柄，clone 避免移动借用冲突。
+    let handle_for_dispatch = app_handle.clone();
+    if let Err(err) = handle_for_dispatch.run_on_main_thread(move || {
+        notify_copy_feedback(&app_handle, duplicate);
+    }) {
+        log::warn!("dispatch notify_copy_feedback to main thread failed: {err}");
     }
     if let Err(err) = app.emit(
         CLIPBOARD_UPDATED_EVENT,

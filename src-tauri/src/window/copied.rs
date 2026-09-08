@@ -19,6 +19,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
 use std::time::Duration;
 
+use serde_json::json;
 use tauri::{
     AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder,
 };
@@ -102,8 +103,8 @@ fn ensure_window(app: &AppHandle) -> Result<()> {
 fn disable_native_window_frame(window: &tauri::WebviewWindow) {
     use windows::Win32::Foundation::COLORREF;
     use windows::Win32::Graphics::Dwm::{
-        DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_WINDOW_CORNER_PREFERENCE,
-        DWMWA_COLOR_NONE, DWMWCP_DONOTROUND, DWM_WINDOW_CORNER_PREFERENCE,
+        DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_COLOR_NONE,
+        DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_DONOTROUND, DWM_WINDOW_CORNER_PREFERENCE,
     };
 
     let Ok(hwnd) = window.hwnd() else {
@@ -130,19 +131,22 @@ fn disable_native_window_frame(window: &tauri::WebviewWindow) {
     }
 }
 
-/// 在剪贴板窗口所在显示器（回退主显示器）右下角弹出复制成功提示，1.5s 后自动隐藏。
-/// 被 [`crate::clipboard::watcher`] 在「非去重新入库」时调用。失败仅记日志，不阻断入库。
-pub fn show(app: &AppHandle) {
+/// 在剪贴板窗口所在显示器（回退主显示器）底部居中弹出复制反馈气泡，动画结束后自动隐藏。
+/// - `duplicate = false`：新内容入库，绿色对勾「复制成功」；
+/// - `duplicate = true`：重复复制头部条目，粉色右箭头「已复制」。
+///
+/// 被 [`crate::clipboard::watcher`] 调用。失败仅记日志，不阻断入库。
+pub fn show(app: &AppHandle, duplicate: bool) {
     // 每 show 一次自增纪元：使在途的休眠计时失效，避免误标为休眠态。
     COPIED_EPOCH.fetch_add(1, Ordering::Relaxed);
     COPIED_DORMANT.store(false, Ordering::Relaxed);
 
-    if let Err(err) = show_inner(app) {
+    if let Err(err) = show_inner(app, duplicate) {
         log::warn!("show copied toast failed: {err}");
     }
 }
 
-fn show_inner(app: &AppHandle) -> Result<()> {
+fn show_inner(app: &AppHandle, duplicate: bool) -> Result<()> {
     ensure_window(app)?;
 
     let window = app
@@ -192,9 +196,10 @@ fn show_inner(app: &AppHandle) -> Result<()> {
         .map_err(|err| AppError::Other(anyhow::anyhow!("copied toast show: {err}")))?;
     lifecycle::on_shown(app, COPIED_WINDOW_LABEL);
 
-    // 广播一次「重播动画」。前端在页面加载时会自动播放一遍；首次建窗可能因页面尚未
+    // 广播一次「重播动画」，payload 携带变体：duplicate=true 走粉色「已复制」。
+    // 前端在页面加载时会自动播放一遍；首次建窗可能因页面尚未
     // ready 丢失此事件，由前端 mount 自播兜底，后续复用窗口均能收到并重播。
-    if let Err(err) = app.emit(COPIED_PLAY_EVENT, ()) {
+    if let Err(err) = app.emit(COPIED_PLAY_EVENT, json!({ "duplicate": duplicate })) {
         log::warn!("emit copied play failed: {err}");
     }
 
