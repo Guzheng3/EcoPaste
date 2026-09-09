@@ -15,6 +15,7 @@
     "windows": [
       {
         "acceptFirstMouse": true,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,Translate,TranslateUI,AutofillEnableAccountStorage,AutofillServerCommunication,MediaRouter,OptimizationHints,BackgroundFetch",
         "alwaysOnTop": true,
         "decorations": false,
         "focusable": false,

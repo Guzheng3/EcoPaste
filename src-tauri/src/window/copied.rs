@@ -185,6 +185,12 @@ fn show_inner(app: &AppHandle, duplicate: bool) -> Result<()> {
             .map_err(|err| AppError::Other(anyhow::anyhow!("copied toast position: {err}")))?;
     }
 
+    // 休眠期内存目标级别被压到 Low（见 [`schedule_dormant`]），显示前恢复 Normal，
+    // 保证气泡动画首帧全速渲染。与下方 show 同走主线程消息队列，先入队先执行。
+    if let Err(err) = super::webview_memory::set_memory_usage_target(&window, false) {
+        log::warn!("restore copied toast memory target failed: {err}");
+    }
+
     // 先恢复 WebView 合成再显示原生窗口：hide 时为避免 WebView2 在窗口消失前
     // 闪出最终帧会先停掉 webview（见 [`hide_toast`]），此处必须成对恢复，
     // 否则窗口出现时内容空白；先恢复也让窗口出现的瞬间内容已就绪。
@@ -272,6 +278,10 @@ fn schedule_dormant(app: &AppHandle) {
                 return;
             }
             COPIED_DORMANT.store(true, Ordering::Relaxed);
+            // 长期隐藏后把 WebView2 内存目标级别压到 Low 压缩内存，下次 show 前恢复 Normal。
+            if let Err(err) = super::webview_memory::set_memory_usage_target(&window, true) {
+                log::warn!("set copied toast memory target low failed: {err}");
+            }
             log::debug!("copied toast entered dormant state");
         }) {
             log::warn!("copied toast dormant main-thread dispatch failed: {err}");

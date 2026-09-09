@@ -4,6 +4,7 @@ pub mod monitor_watch;
 pub(super) mod position;
 pub mod preview;
 mod state;
+pub mod webview_memory;
 
 #[cfg(target_os = "macos")]
 pub mod macos;
@@ -26,6 +27,22 @@ pub const CLIPBOARD_WINDOW_LABEL: &str = "clipboard";
 pub const PREFERENCE_WINDOW_LABEL: &str = "preference";
 pub const CLIPBOARD_PREVIEW_WINDOW_LABEL: &str = "clipboard-preview";
 pub const ONBOARDING_WINDOW_LABEL: &str = "onboarding";
+
+/// 所有 WebView 窗口统一的 additional browser arguments（仅 Windows/WebView2 生效），
+/// 用于禁用不需要的浏览器后台功能，降低内存/CPU 占用。
+///
+/// 注意：WebView2 共享同一 browser process，参数只在第一个窗口创建时生效——
+/// 所有建窗点（含 `tauri.conf.json` 里的 clipboard 主窗口）必须设置同一份参数。
+/// 该串会整体替换 Tauri 默认值 `--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection`，
+/// 故默认的三项必须原样保留在前部。
+pub const WEBVIEW_ADDITIONAL_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,Translate,TranslateUI,AutofillEnableAccountStorage,AutofillServerCommunication,MediaRouter,OptimizationHints,BackgroundFetch";
+
+/// 给窗口 builder 统一套上 [`WEBVIEW_ADDITIONAL_ARGS`]。macOS/Linux 上无效果但可编译。
+pub fn apply_webview_args<R: tauri::Runtime, M: tauri::Manager<R>>(
+    builder: WebviewWindowBuilder<'_, R, M>,
+) -> WebviewWindowBuilder<'_, R, M> {
+    builder.additional_browser_args(WEBVIEW_ADDITIONAL_ARGS)
+}
 
 /// 偏好页定位高亮事件。前端收到后切到目标设置项所在分类并滚动高亮。
 const PREFERENCE_HIGHLIGHT_EVENT: &str = "preference://highlight-setting";
@@ -135,6 +152,16 @@ pub fn show_window(app_handle: &AppHandle, label: &str) -> Result<()> {
             // 已可见窗口可能刚被用户移动但尚未落盘，重复恢复会把窗口拉回旧位置。
             if let Err(err) = state::restore_window_state(app_handle, label) {
                 log::warn!("restore window state failed for {label}: {err}");
+            }
+        }
+    }
+
+    // 显示前把隐藏/休眠时压到 Low 的 WebView2 内存目标级别恢复为 Normal，
+    // 否则窗口会一直停留在低内存档导致渲染变慢。仅 clipboard / preference 在隐藏时被压低。
+    if matches!(label, CLIPBOARD_WINDOW_LABEL | PREFERENCE_WINDOW_LABEL) {
+        if let Some(window) = app_handle.get_webview_window(label) {
+            if let Err(err) = webview_memory::set_memory_usage_target(&window, false) {
+                log::warn!("restore webview2 memory target failed for {label}: {err}");
             }
         }
     }
@@ -311,6 +338,8 @@ pub fn build_preference_window(app_handle: &AppHandle) -> Result<()> {
     .disable_drag_drop_handler()
     .visible(false);
 
+    let builder = apply_webview_args(builder);
+
     #[cfg(target_os = "macos")]
     let builder = builder
         .title_bar_style(tauri::TitleBarStyle::Overlay)
@@ -332,11 +361,11 @@ pub fn build_onboarding_window(app_handle: &AppHandle) -> Result<()> {
         return Ok(());
     }
 
-    WebviewWindowBuilder::new(
+    apply_webview_args(WebviewWindowBuilder::new(
         app_handle,
         ONBOARDING_WINDOW_LABEL,
         WebviewUrl::App("index.html/#/onboarding".into()),
-    )
+    ))
     .title("EcoPaste Onboarding")
     .inner_size(900.0, 600.0)
     .center()

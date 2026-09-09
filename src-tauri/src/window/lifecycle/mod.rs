@@ -256,6 +256,22 @@ impl WindowLifecycleManager {
             schedule_clipboard_dormant(app, label, generation);
         }
 
+        // 隐藏 / 休眠时把 WebView2 内存目标级别压到 Low（仅 clipboard / preference，
+        // Windows 实际生效）；显示前由 `show_window` 恢复 Normal。
+        if matches!(phase, LifecyclePhase::HiddenWarm | LifecyclePhase::Dormant)
+            && previous != phase
+            && matches!(
+                label,
+                super::CLIPBOARD_WINDOW_LABEL | super::PREFERENCE_WINDOW_LABEL
+            )
+        {
+            if let Some(window) = app.get_webview_window(label) {
+                if let Err(err) = super::webview_memory::set_memory_usage_target(&window, true) {
+                    log::warn!("set webview2 memory target low failed for {label}: {err}");
+                }
+            }
+        }
+
         if !descriptor.emits_lifecycle {
             return;
         }

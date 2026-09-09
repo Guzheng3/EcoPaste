@@ -127,20 +127,24 @@ fn build_menu_window(
         return Ok(());
     }
 
-    WebviewWindowBuilder::new(app, label, WebviewUrl::App(url.into()))
-        .inner_size(width as f64, height as f64)
-        .decorations(false)
-        .transparent(true)
-        .resizable(false)
-        .maximizable(false)
-        .minimizable(false)
-        .always_on_top(true)
-        .focusable(false)
-        .visible(false)
-        .skip_taskbar(true)
-        .drag_and_drop(false)
-        .build()
-        .map_err(|err| AppError::Other(anyhow::anyhow!("build {label} window: {err}")))?;
+    crate::window::apply_webview_args(WebviewWindowBuilder::new(
+        app,
+        label,
+        WebviewUrl::App(url.into()),
+    ))
+    .inner_size(width as f64, height as f64)
+    .decorations(false)
+    .transparent(true)
+    .resizable(false)
+    .maximizable(false)
+    .minimizable(false)
+    .always_on_top(true)
+    .focusable(false)
+    .visible(false)
+    .skip_taskbar(true)
+    .drag_and_drop(false)
+    .build()
+    .map_err(|err| AppError::Other(anyhow::anyhow!("build {label} window: {err}")))?;
 
     Ok(())
 }

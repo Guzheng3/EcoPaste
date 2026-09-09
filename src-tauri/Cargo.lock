@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "EcoPaste"
-version = "1.2.4"
+version = "1.2.5"
 dependencies = [
  "anyhow",
  "argon2",
@@ -47,8 +47,10 @@ dependencies = [
  "url",
  "uuid",
  "walkdir",
+ "webview2-com",
  "winapi",
  "windows 0.52.0",
+ "windows-core 0.61.2",
  "windows-registry",
  "windows-result 0.4.1",
  "zeroize",

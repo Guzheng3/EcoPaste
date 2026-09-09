@@ -250,11 +250,11 @@ pub fn build_clipboard_preview_window(app: &AppHandle) -> Result<()> {
         return Ok(());
     }
 
-    WebviewWindowBuilder::new(
+    super::apply_webview_args(WebviewWindowBuilder::new(
         app,
         CLIPBOARD_PREVIEW_WINDOW_LABEL,
         WebviewUrl::App("index.html/#/preview".into()),
-    )
+    ))
     .title("EcoPaste Preview")
     .inner_size(1.0, 1.0)
     .resizable(false)
