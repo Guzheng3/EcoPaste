@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.5](https://github.com/Guzheng3/EcoPaste/compare/v1.2.4...v1.2.5) (2026-09-09)
+
+### ⚡ Performance Improvements
+
+* reduce idle memory usage by compressing hidden WebView2 renderers via `MemoryUsageTargetLevel` (Low when hidden, Normal when shown)
+* disable unused Chromium background features (Translate, Autofill server communication, Media Router, Optimization Hints, Background Fetch) across all webview windows
+
 ## [1.2.4](https://github.com/Guzheng3/EcoPaste/compare/v1.2.3...v1.2.4) (2026-09-08)
 
 ### ✨ Features

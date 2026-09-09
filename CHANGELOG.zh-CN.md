@@ -1,5 +1,12 @@
 # 更新日志
 
+## [1.2.5](https://github.com/Guzheng3/EcoPaste/compare/v1.2.4...v1.2.5) (2026-09-09)
+
+### ⚡ 性能优化
+
+* 降低后台常驻内存：窗口隐藏 / 休眠时通过 `MemoryUsageTargetLevel` 压缩 WebView2 渲染进程内存，显示前恢复（仅 Windows 生效）
+* 所有 WebView 窗口统一关闭用不到的 Chromium 后台功能（翻译、Autofill 账号通信、媒体路由、优化提示、后台拉取）
+
 ## [1.2.4](https://github.com/Guzheng3/EcoPaste/compare/v1.2.3...v1.2.4) (2026-09-08)
 
 ### ✨ 新功能
