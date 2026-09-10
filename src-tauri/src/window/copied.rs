@@ -56,11 +56,14 @@ fn ensure_window(app: &AppHandle) -> Result<()> {
         return Ok(());
     }
 
-    let builder = WebviewWindowBuilder::new(
+    // 与其它 WebView 窗保持同一份 `additional_browser_args`：WebView2 共享 browser
+    // process，参数只在首个建窗时生效，任何建窗点带上不同参数都会导致后续 webview
+    // 创建失败（0x8007139F），气泡因此无法弹出。
+    let builder = crate::window::apply_webview_args(WebviewWindowBuilder::new(
         app,
         COPIED_WINDOW_LABEL,
         WebviewUrl::App("index.html/#/copied".into()),
-    )
+    ))
     .inner_size(WINDOW_WIDTH, WINDOW_HEIGHT)
     .decorations(false)
     .transparent(true)
