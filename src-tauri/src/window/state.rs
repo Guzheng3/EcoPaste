@@ -91,25 +91,6 @@ impl WindowStateStore {
         Ok(())
     }
 
-    /// 清空全部窗口几何存档（内存 + 落盘）。
-    /// 显示器配置变化后调用：旧几何按旧分辨率记录，重启后按默认布局重新初始化。
-    pub fn clear_all(&self) -> Result<()> {
-        self.states
-            .lock()
-            .unwrap_or_else(|poisoned| {
-                log::error!("window state mutex poisoned on clear, recovering");
-                poisoned.into_inner()
-            })
-            .clear();
-
-        let json = serde_json::to_string_pretty(&HashMap::<String, WindowState>::new())
-            .context("failed to serialize empty window states")?;
-        let path = self.path();
-        fs::write(&path, json)
-            .with_context(|| format!("failed to write window state to {:?}", path))?;
-        Ok(())
-    }
-
     fn path(&self) -> PathBuf {
         self.path
             .read()
@@ -159,9 +140,9 @@ pub fn save_window_state(app: &AppHandle, label: &str) -> Result<()> {
 
 /// 恢复窗口的尺寸 + 位置。无存档返回 `Ok(false)`。
 ///
-/// 始终恢复存档尺寸；位置在恢复前校验是否仍位于可用显示器范围内：
-/// 若上次所在显示器已被拔出，则 fallback 到当前光标所在屏幕的中心，
-/// 避免窗口出现在不可见的虚拟坐标区域。
+/// 保留用户保存的尺寸，但会**钳制到目标屏幕内**：若存档尺寸超过目标显示器
+/// （分辨率 / 缩放变化后可能出现），把宽高压到屏幕边界内而不是跳过，避免窗口
+/// 超出屏幕导致显示不完整；目标屏取「存档位置所在显示器」，被拔出则退到光标所在屏。
 pub fn restore_window_state(app: &AppHandle, label: &str) -> Result<bool> {
     let store = app.state::<WindowStateStore>();
     let Some(state) = store.get(label) else {
@@ -172,28 +153,52 @@ pub fn restore_window_state(app: &AppHandle, label: &str) -> Result<bool> {
         .get_webview_window(label)
         .ok_or_else(|| anyhow::anyhow!("window not found: {label}"))?;
 
-    window
-        .set_size(PhysicalSize::new(state.width, state.height))
-        .map_err(|e| anyhow::anyhow!(e))?;
-
     let monitors = window
         .available_monitors()
         .map_err(|e| anyhow::anyhow!(e))?;
-    let on_screen = monitors.iter().any(|m| {
-        let mx = m.position().x;
-        let my = m.position().y;
-        let mw = m.size().width as i32;
-        let mh = m.size().height as i32;
-        state.x >= mx && state.x < mx + mw && state.y >= my && state.y < my + mh
-    });
 
-    if on_screen {
+    // 目标屏：优先「存档左上角所在显示器」；被拔出则退到光标所在屏；再退到首屏。
+    let target = monitors
+        .iter()
+        .find(|m| {
+            let p = m.position();
+            let size = m.size();
+            state.x >= p.x
+                && state.x < p.x + size.width as i32
+                && state.y >= p.y
+                && state.y < p.y + size.height as i32
+        })
+        .cloned()
+        .or_else(|| super::position::cursor_monitor(&window))
+        .or_else(|| monitors.first().cloned());
+
+    let Some(target) = target else {
+        // 无任何可用显示器（罕见）：仍恢复既有尺寸，位置保持默认。
         window
-            .set_position(PhysicalPosition::new(state.x, state.y))
+            .set_size(PhysicalSize::new(state.width, state.height))
             .map_err(|e| anyhow::anyhow!(e))?;
-    } else {
-        super::position::center_on_cursor_monitor(&window)?;
-    }
+        return Ok(true);
+    };
+
+    let mon_pos = *target.position();
+    let mon_size = *target.size();
+
+    // 保留用户尺寸，但不超过目标屏：分辨率变化后旧存档可能大于新屏幕，
+    // 这里压到屏幕边界内，而不是把窗口整体作废缩回默认。
+    let width = state.width.min(mon_size.width);
+    let height = state.height.min(mon_size.height);
+    window
+        .set_size(PhysicalSize::new(width, height))
+        .map_err(|e| anyhow::anyhow!(e))?;
+
+    // 把窗口左上角夹回目标屏内，避免窗口主干落到不可见区域。
+    let max_x = (mon_pos.x + mon_size.width as i32 - width as i32).max(mon_pos.x);
+    let max_y = (mon_pos.y + mon_size.height as i32 - height as i32).max(mon_pos.y);
+    let x = state.x.clamp(mon_pos.x, max_x);
+    let y = state.y.clamp(mon_pos.y, max_y);
+    window
+        .set_position(PhysicalPosition::new(x, y))
+        .map_err(|e| anyhow::anyhow!(e))?;
 
     Ok(true)
 }

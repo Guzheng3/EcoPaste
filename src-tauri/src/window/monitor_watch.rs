@@ -1,11 +1,13 @@
 //! 显示器配置监听：分辨率 / DPI 缩放 / 显示器增删变化后自动重启应用。
 //!
-//! 窗口几何（尺寸与位置）是按「当时分辨率」保存与计算的：分辨率或缩放变化后，
-//! 旧几何可能超出新屏幕、WebView 布局也可能整体错乱，表现为弹窗显示不完整。
-//! 本模块轮询显示器快照，检测到变化后：
-//! 1. 清空窗口几何存档，让重启后的新进程按默认布局重新初始化（真正适应新分辨率）；
+//! 窗口几何是按「当时分辨率」保存的：分辨率或缩放变化后，旧几何可能超出新屏幕，
+//! 表现为弹窗显示不完整。本模块轮询显示器快照，检测到变化后：
+//! 1. 保留用户保存的几何存档（不清空），尺寸偏好不因分辨率变化而丢失；
 //! 2. 剪贴板窗口可见时先把窗口夹回屏幕救急，等窗口隐藏后再重启；
 //! 3. 窗口不可见时立即重启（`AppHandle::restart`，与托盘菜单行为一致）。
+//!
+//! 重启后新进程恢复存档时，`restore_window_state` 会把尺寸钳制到新屏幕内
+//! （超出则压到边界、不缩回默认），从而既适应新分辨率又保住窗口大小。
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -13,7 +15,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Manager};
 
 use super::position;
-use super::{get_window, WindowStateStore, CLIPBOARD_WINDOW_LABEL};
+use super::{get_window, CLIPBOARD_WINDOW_LABEL};
 
 /// 轮询间隔。显示器枚举开销极小，2 秒足以快速响应且功耗可忽略。
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
@@ -100,16 +102,12 @@ fn snapshot(app_handle: &AppHandle) -> Option<String> {
     Some(parts.join("|"))
 }
 
-/// 显示器配置变化后的处理：作废旧几何存档，按窗口可见性决定立即重启还是延后。
+/// 显示器配置变化后的处理：保留用户保存的窗口几何，按窗口可见性决定立即重启还是延后。
 fn on_monitor_changed(app_handle: &AppHandle) {
-    // 1. 几何存档按旧分辨率记录，立即作废：重启后按默认布局初始化，
-    //    避免新进程恢复旧存档导致依旧显示不完整。
-    let store = app_handle.state::<WindowStateStore>();
-    if let Err(err) = store.clear_all() {
-        log::warn!("clear window states on monitor change failed: {err:?}");
-    }
+    // 不清空几何存档：存档尺寸是用户偏好，恢复时由 `restore_window_state` 钳制到
+    // 新屏幕内（超出则压到边界、不缩回默认），既适应新分辨率又保住窗口大小。
 
-    // 2. 窗口可见：先夹回屏幕边界保证当前会话可操作，等隐藏后再重启。
+    // 窗口可见：先夹回屏幕边界保证当前会话可操作，等窗口隐藏后再重启。
     let clipboard_visible = app_handle
         .get_webview_window(CLIPBOARD_WINDOW_LABEL)
         .and_then(|window| window.is_visible().ok())
