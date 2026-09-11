@@ -111,7 +111,10 @@ const Copied: FC = () => {
             />
             {duplicate ? (
               // 向右箭头：横杆 + 尖角（重复复制 = 内容已在历史最前）
-              <path className="copied-line" d="M7 12 L17 12 M13 8 L17 12 L13 16" />
+              <path
+                className="copied-line"
+                d="M7 12 L17 12 M13 8 L17 12 L13 16"
+              />
             ) : (
               <path className="copied-line" d="M7 12.6 L10.8 16.4 L17 8.5" />
             )}
@@ -127,17 +130,14 @@ const Copied: FC = () => {
   );
 };
 
-/** 动画关键帧与视觉样式，与演示稿保持一致（半透明胶囊 + 描边圆/勾 + 平滑光晕）。 */
+/** 动画关键帧与视觉样式（半透明胶囊 + 描边圆/勾，无外发光/边框光晕）。 */
 const COPED_CSS = `
  :root {
   --copied-success: #22c55e;
   --copied-duplicate: #ec4899;
   --copied-accent: var(--copied-success);
-  --copied-glow-soft: rgb(34 197 94 / 0.4);
-  --copied-glow-spread: rgb(34 197 94 / 0.32);
   --copied-bg: #ffffff;
   --copied-text: #3f3f46;
-  --copied-shadow: 0 8px 24px rgb(22 163 74 / 0.18);
 }
  html, body, #root {
    margin: 0; padding: 0;
@@ -153,9 +153,6 @@ const COPED_CSS = `
  /* 重复复制变体：粉红强调色 + 粉色光晕/阴影（覆盖默认 accent） */
  .copied-toast--duplicate {
   --copied-accent: var(--copied-duplicate);
-  --copied-glow-soft: rgb(236 72 153 / 0.4);
-  --copied-glow-spread: rgb(236 72 153 / 0.32);
-  --copied-shadow: 0 8px 24px rgb(219 39 119 / 0.18);
 }
  html.dark .copied-toast--duplicate { color: #fce7f3; }
 
@@ -165,26 +162,19 @@ const COPED_CSS = `
   padding: 8px 18px 8px 10px;
   border-radius: 10px;
   background: var(--copied-bg);
-  box-shadow: var(--copied-shadow);
   border: none; outline: none;
   font-size: 14px; line-height: 1; font-weight: 700; color: var(--copied-text);
 }
  .copied-toast { opacity: 0; transform: scale(.6) translateY(8px); }
 
- /* 入场：出现 + 绿色光晕柔和扩散再收敛（forwards 保持到淡出） */
+ /* 入场：出现动画（forwards 保持到淡出） */
  .copied-toast--enter {
-   animation: copied-pop-in .45s cubic-bezier(.2, .9, .3, 1.25) forwards,
-     copied-glow 1.4s ease-out forwards;
+   animation: copied-pop-in .45s cubic-bezier(.2, .9, .3, 1.25) forwards;
  }
  @keyframes copied-pop-in {
    0% { opacity: 0; transform: scale(.6) translateY(8px); }
    60% { opacity: 1; transform: scale(1.06) translateY(0); }
    100% { opacity: 1; transform: scale(1) translateY(0); }
- }
- @keyframes copied-glow {
-   0% { box-shadow: 0 0 0 0 rgb(34 197 94 / 0.4); }
-   40% { box-shadow: 0 0 30px 4px rgb(34 197 94 / 0.32); }
-   100% { box-shadow: var(--copied-shadow); }
  }
 
  /* 停留：保持可见，无过渡回退，避免显隐闪烁 */
