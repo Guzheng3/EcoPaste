@@ -21,7 +21,8 @@ use std::time::Duration;
 
 use serde_json::json;
 use tauri::{
-    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder,
+    window::Color, AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, WebviewUrl,
+    WebviewWindowBuilder,
 };
 
 use crate::core::{AppError, Result};
@@ -67,6 +68,10 @@ fn ensure_window(app: &AppHandle) -> Result<()> {
     .inner_size(WINDOW_WIDTH, WINDOW_HEIGHT)
     .decorations(false)
     .transparent(true)
+    // 显式把 WebView2 默认背景色设成全透明：否则 show 首帧 CSS 尚未绘制时，
+    // WebView 底色是白色，圆角卡片四角以直角白块闪现，随后才被透明+圆角覆盖，
+    // 表现为「先方后圆」的一次闪烁。
+    .background_color(Color(0, 0, 0, 0))
     // Windows 上 DWM 默认给无边框窗口描一圈矩形边框：卡片淡出后、窗口 hide 前，
     // 内容已透明而边框仍残留，观感上是一个矩形框最后消失。关掉 shadow 后
     // 窗口本身不再有任何原生描边，视觉只剩前端绘制的圆角卡片。
