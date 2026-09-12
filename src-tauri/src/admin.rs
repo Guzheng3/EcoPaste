@@ -390,11 +390,20 @@ fn scheduled_task_action(exe: &Path) -> String {
     )
 }
 
+/// 当前进程参数是否「无用户业务参数」，可用计划任务静默提权而不会丢参数。
+///
+/// 仅当所有参数都是内部标记时才返回 true：
+/// - `--ecopaste-admin-restarted`（已被提权实例复活）；
+/// - `--auto-launch`（开机自启拉起）。此时原生进程非提权，提权必须走计划任务
+///   （/RL HIGHEST，免 UAC 弹窗静默升级），否则会退化成 UAC 对话框——开机瞬间
+///   无人点击，应用启动即退出，表现为「自启动没生效」。
+///
+/// 带其它参数（如待打开的备份文件路径）时直接返回 false，避免经任务重定向丢参数。
 #[cfg(target_os = "windows")]
 fn can_use_scheduled_task_for_current_args() -> bool {
     std::env::args()
         .skip(1)
-        .all(|arg| arg == ADMIN_RESTARTED_ARG)
+        .all(|arg| arg == ADMIN_RESTARTED_ARG || arg == crate::autostart::AUTO_LAUNCH_ARG)
 }
 
 #[cfg(target_os = "windows")]
